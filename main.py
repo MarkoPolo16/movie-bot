@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 import os
 import requests
@@ -24,7 +25,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # =========================
-# DATABASE SETUP
+# DATABASE
 # =========================
 
 conn = sqlite3.connect("ratings.db")
@@ -44,47 +45,60 @@ conn.commit()
 conn.close()
 
 # =========================
+# AUTOCOMPLETE
+# =========================
+
+async def movie_autocomplete(interaction: discord.Interaction, current: str):
+
+    if not current:
+        return []
+
+    url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}"
+    data = requests.get(url).json()
+
+    results = []
+
+    for movie in data.get("results", [])[:5]:
+        title = movie.get("title")
+        if title:
+            results.append(app_commands.Choice(name=title, value=title))
+
+    return results
+
+# =========================
 # BOT READY
 # =========================
 
 @bot.event
 async def on_ready():
+    await bot.tree.sync()
     print(f"{bot.user} ist online!")
 
 # =========================
-# PING
+# SLASH SEARCH COMMAND
 # =========================
 
-@bot.command()
-async def ping(ctx):
-    await ctx.send("🏓 Pong!")
-
-# =========================
-# SEARCH MOVIE
-# =========================
-
-@bot.command()
-async def search(ctx, *, movie_name):
+@bot.tree.command(name="search", description="Search for a movie")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
+async def search(interaction: discord.Interaction, movie_name: str):
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
-
-    response = requests.get(url)
-    data = response.json()
+    data = requests.get(url).json()
 
     if not data["results"]:
-        await ctx.send("❌ Film nicht gefunden.")
+        await interaction.response.send_message("❌ Movie not found")
         return
 
     movie = data["results"][0]
 
     movie_id = movie["id"]
-    title = movie.get("title", "Unknown")
-    overview = movie.get("overview", "No description available.")
+    title = movie["title"]
+    overview = movie["overview"]
     release = movie.get("release_date", "Unknown")
     poster = movie.get("poster_path")
 
     # =========================
-    # SERVER RATING (FIXED)
+    # SERVER RATING
     # =========================
 
     conn = sqlite3.connect("ratings.db")
@@ -98,12 +112,12 @@ async def search(ctx, *, movie_name):
     result = cursor.fetchone()
     conn.close()
 
-    server_rating = result[0]
+    rating = result[0]
 
-    if server_rating is None:
-        server_rating = 0.0
+    if rating is None:
+        rating = 0.0
 
-    server_rating = round(server_rating, 1)
+    rating = round(rating, 1)
 
     # =========================
     # EMBED
@@ -116,31 +130,30 @@ async def search(ctx, *, movie_name):
     )
 
     embed.add_field(name="📅 Release", value=release, inline=True)
-    embed.add_field(name="⭐ Server Rating", value=f"{server_rating}/5", inline=True)
+    embed.add_field(name="⭐ Server Rating", value=f"{rating}/5", inline=True)
 
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 # =========================
-# RATE MOVIE
+# SLASH RATE COMMAND
 # =========================
 
-@bot.command()
-async def rate(ctx, rating: float, *, movie_name):
+@bot.tree.command(name="rate", description="Rate a movie")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
+async def rate(interaction: discord.Interaction, rating: float, movie_name: str):
 
     if rating < 0.5 or rating > 5:
-        await ctx.send("❌ Rating must be between 0.5 and 5.")
+        await interaction.response.send_message("❌ Rating must be 0.5 - 5")
         return
 
-    # GET MOVIE FROM TMDB AGAIN (TO GET ID)
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
-    response = requests.get(url)
-    data = response.json()
+    data = requests.get(url).json()
 
     if not data["results"]:
-        await ctx.send("❌ Movie not found.")
+        await interaction.response.send_message("❌ Movie not found")
         return
 
     movie = data["results"][0]
@@ -148,15 +161,14 @@ async def rate(ctx, rating: float, *, movie_name):
     movie_id = movie["id"]
     title = movie["title"]
 
-    # SAVE TO DB
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
     cursor.execute(
         "INSERT INTO ratings VALUES (?, ?, ?, ?, ?)",
         (
-            str(ctx.author.id),
-            str(ctx.author),
+            str(interaction.user.id),
+            str(interaction.user),
             movie_id,
             title,
             rating
@@ -166,35 +178,25 @@ async def rate(ctx, rating: float, *, movie_name):
     conn.commit()
     conn.close()
 
-    stars = "⭐" * int(rating)
-    if rating % 1 != 0:
-        stars += "✨"
-
-    embed = discord.Embed(
-        title="🍿 Rating Saved",
-        description=f"{ctx.author.mention} rated **{title}**",
-        color=discord.Color.gold()
+    await interaction.response.send_message(
+        f"🍿 {interaction.user.mention} rated **{title}** → ⭐ {rating}/5"
     )
-
-    embed.add_field(name="⭐ Rating", value=f"{rating}/5 {stars}", inline=False)
-
-    await ctx.send(embed=embed)
 
 # =========================
 # TOP MOVIES
 # =========================
 
-@bot.command()
-async def topmovies(ctx):
+@bot.tree.command(name="topmovies", description="Show top rated movies")
+async def topmovies(interaction: discord.Interaction):
 
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
     cursor.execute("""
-    SELECT movie_title, AVG(rating) as avg_rating, COUNT(*) as votes
+    SELECT movie_title, AVG(rating), COUNT(*)
     FROM ratings
     GROUP BY movie_id
-    ORDER BY avg_rating DESC
+    ORDER BY AVG(rating) DESC
     LIMIT 10
     """)
 
@@ -202,7 +204,7 @@ async def topmovies(ctx):
     conn.close()
 
     if not movies:
-        await ctx.send("❌ No ratings yet.")
+        await interaction.response.send_message("❌ No ratings yet")
         return
 
     embed = discord.Embed(
@@ -210,77 +212,49 @@ async def topmovies(ctx):
         color=discord.Color.purple()
     )
 
-    for i, movie in enumerate(movies, start=1):
-
-        title = movie[0]
-        avg = round(movie[1], 1)
-        votes = movie[2]
-
+    for i, m in enumerate(movies, start=1):
         embed.add_field(
-            name=f"{i}. {title}",
-            value=f"⭐ {avg}/5 ({votes} votes)",
+            name=f"{i}. {m[0]}",
+            value=f"⭐ {round(m[1],1)}/5 ({m[2]} votes)",
             inline=False
         )
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 # =========================
 # MY RATINGS
 # =========================
 
-@bot.command()
-async def myratings(ctx):
+@bot.tree.command(name="myratings", description="Show your ratings")
+async def myratings(interaction: discord.Interaction):
 
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
     cursor.execute(
         "SELECT movie_title, rating FROM ratings WHERE user_id = ?",
-        (str(ctx.author.id),)
+        (str(interaction.user.id),)
     )
 
-    ratings = cursor.fetchall()
+    data = cursor.fetchall()
     conn.close()
 
-    if not ratings:
-        await ctx.send("❌ You haven't rated any movies yet.")
+    if not data:
+        await interaction.response.send_message("❌ No ratings yet")
         return
 
     embed = discord.Embed(
-        title=f"🎬 {ctx.author.name}'s Ratings",
+        title=f"🎬 {interaction.user.name}'s Ratings",
         color=discord.Color.blue()
     )
 
-    for r in ratings:
-        embed.add_field(
-            name=r[0],
-            value=f"⭐ {r[1]}/5",
-            inline=False
-        )
+    for d in data:
+        embed.add_field(name=d[0], value=f"⭐ {d[1]}/5", inline=False)
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 # =========================
-# HELP
-# =========================
-
-@bot.command()
-async def helpme(ctx):
-
-    embed = discord.Embed(
-        title="🎬 CinemaBot Commands",
-        color=discord.Color.red()
-    )
-
-    embed.add_field(name="!search movie", value="Search a movie", inline=False)
-    embed.add_field(name="!rate 4.5 movie", value="Rate a movie", inline=False)
-    embed.add_field(name="!topmovies", value="Top rated movies", inline=False)
-    embed.add_field(name="!myratings", value="Your ratings", inline=False)
-
-    await ctx.send(embed=embed)
-
-# =========================
-# START BOT
+# RUN BOT
 # =========================
 
 bot.run(TOKEN)
