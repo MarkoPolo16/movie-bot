@@ -63,22 +63,24 @@ async def on_member_join(member):
         )
 
         embed.add_field(
-            name="🎥 Start Here",
-            value="Use `/search` to find and rate movies ⭐",
+            name="🎥 Start",
+            value="Use `/search` to find movies and rate them ⭐",
             inline=False
         )
-
-        embed.set_footer(text="CinemaBot • Enjoy your stay 🎬")
 
         await channel.send(embed=embed)
 
 # =========================
-# CLEAN COMMAND (FIXED)
+# PURGE COMMAND (FIXED)
 # =========================
 
-@bot.tree.command(name="clean", description="Delete messages (Admin only)")
+@bot.tree.command(name="purge", description="Delete messages (Admin only)")
 @app_commands.checks.has_permissions(manage_messages=True)
-async def clean(interaction: discord.Interaction, amount: int):
+async def purge(interaction: discord.Interaction, amount: int):
+
+    if amount <= 0:
+        await interaction.response.send_message("❌ Invalid amount", ephemeral=True)
+        return
 
     await interaction.channel.purge(limit=amount)
 
@@ -109,7 +111,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     return choices
 
 # =========================
-# RATING VIEW
+# RATING SYSTEM
 # =========================
 
 class RatingView(discord.ui.View):
@@ -185,7 +187,7 @@ class RatingView(discord.ui.View):
     async def b5(self, i, b): await self.handle(i, 5.0)
 
 # =========================
-# SEARCH COMMAND
+# SEARCH
 # =========================
 
 @bot.tree.command(name="search", description="Search movies")
@@ -210,11 +212,9 @@ async def search(interaction: discord.Interaction, movie_name: str):
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
-    # AVG rating
     cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=?", (movie_id,))
     avg = cursor.fetchone()[0]
 
-    # USER rating
     cursor.execute(
         "SELECT rating FROM ratings WHERE movie_id=? AND user_id=?",
         (movie_id, str(interaction.user.id))
