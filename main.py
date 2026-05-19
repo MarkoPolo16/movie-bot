@@ -15,11 +15,14 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
+WELCOME_CHANNEL_ID = 1506237698304774215
+
 # =========================
-# BOT SETUP
+# INTENTS
 # =========================
 
 intents = discord.Intents.default()
+intents.members = True  # IMPORTANT for welcome system
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -45,6 +48,48 @@ conn.commit()
 conn.close()
 
 # =========================
+# WELCOME SYSTEM
+# =========================
+
+@bot.event
+async def on_member_join(member):
+
+    channel = bot.get_channel(WELCOME_CHANNEL_ID)
+
+    if channel:
+
+        embed = discord.Embed(
+            title="🎬 Welcome to Cinema Server!",
+            description=f"Hey {member.mention}, welcome to the movie universe 🍿",
+            color=discord.Color.from_rgb(0, 255, 255)
+        )
+
+        embed.add_field(
+            name="🎥 Get Started",
+            value="Use `/search` to find movies and rate them ⭐",
+            inline=False
+        )
+
+        embed.set_footer(text="Enjoy your stay 🎬")
+
+        await channel.send(embed=embed)
+
+# =========================
+# CLEAR COMMAND
+# =========================
+
+@bot.tree.command(name="clear", description="Delete messages (Admin only)")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def clear(interaction: discord.Interaction, amount: int):
+
+    await interaction.channel.purge(limit=amount)
+
+    await interaction.response.send_message(
+        f"🧹 Deleted {amount} messages.",
+        ephemeral=True
+    )
+
+# =========================
 # AUTOCOMPLETE
 # =========================
 
@@ -66,7 +111,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     return choices
 
 # =========================
-# RATING VIEW (0.5 - 5)
+# RATING SYSTEM
 # =========================
 
 class RatingView(discord.ui.View):
@@ -80,12 +125,11 @@ class RatingView(discord.ui.View):
         conn = sqlite3.connect("ratings.db")
         cursor = conn.cursor()
 
-        # IMPORTANT: overwrite instead of duplicate
         cursor.execute("""
         INSERT INTO ratings (user_id, username, movie_id, movie_title, rating)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(user_id, movie_id)
-        DO UPDATE SET rating=excluded.rating, username=excluded.username
+        DO UPDATE SET rating=excluded.rating
         """, (
             str(interaction.user.id),
             str(interaction.user),
@@ -102,16 +146,14 @@ class RatingView(discord.ui.View):
         self.save_rating(interaction, rating)
 
         embed = discord.Embed(
-            title="🎬 Rating Updated",
-            description=f"**{self.movie_title}**",
+            title="🎬 Rating Saved",
+            description=f"{self.movie_title}",
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(name="⭐ Your Rating", value=f"{rating}/5", inline=True)
 
         await interaction.response.edit_message(embed=embed, view=None)
-
-    # ⭐ BUTTONS
 
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.handle(i, 0.5)
@@ -144,20 +186,11 @@ class RatingView(discord.ui.View):
     async def b5(self, i, b): await self.handle(i, 5.0)
 
 # =========================
-# READY
-# =========================
-
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"{bot.user} is online!")
-
-# =========================
 # SEARCH
 # =========================
 
-@bot.tree.command(name="search", description="Search a movie")
-@app_commands.describe(movie_name="Type a movie name")
+@bot.tree.command(name="search", description="Search movies")
+@app_commands.describe(movie_name="Movie name")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
 
@@ -173,44 +206,20 @@ async def search(interaction: discord.Interaction, movie_name: str):
     movie_id = movie["id"]
     title = movie["title"]
     overview = movie["overview"]
-    release = movie.get("release_date", "Unknown")
     poster = movie.get("poster_path")
 
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
-    # =========================
-    # AVG RATING
-    # =========================
-
-    cursor.execute(
-        "SELECT AVG(rating) FROM ratings WHERE movie_id=?",
-        (movie_id,)
-    )
+    cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=?", (movie_id,))
     avg = cursor.fetchone()[0]
-
-    # =========================
-    # USER RATING
-    # =========================
-
-    cursor.execute(
-        "SELECT rating FROM ratings WHERE movie_id=? AND user_id=?",
-        (movie_id, str(interaction.user.id))
-    )
-    user_rating = cursor.fetchone()
 
     conn.close()
 
     if avg is None:
         avg = 0.0
-    else:
-        avg = round(avg, 1)
 
-    user_rating_value = user_rating[0] if user_rating else None
-
-    # =========================
-    # EMBED (LETTERBOXD STYLE)
-    # =========================
+    avg = round(avg, 1)
 
     embed = discord.Embed(
         title=f"🎬 {title}",
@@ -220,19 +229,21 @@ async def search(interaction: discord.Interaction, movie_name: str):
 
     embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
 
-    if user_rating_value:
-        embed.add_field(name="👤 Your Rating", value=f"{user_rating_value}/5", inline=True)
-    else:
-        embed.add_field(name="👤 Your Rating", value="Not rated yet", inline=True)
-
-    embed.add_field(name="📅 Release", value=release, inline=True)
-
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
 
     view = RatingView(movie_id, title)
 
     await interaction.response.send_message(embed=embed, view=view)
+
+# =========================
+# READY
+# =========================
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"{bot.user} is online!")
 
 # =========================
 # RUN
