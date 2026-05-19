@@ -47,6 +47,15 @@ conn.commit()
 conn.close()
 
 # =========================
+# READY
+# =========================
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"🎬 {bot.user} is online!")
+
+# =========================
 # WELCOME SYSTEM
 # =========================
 
@@ -64,14 +73,14 @@ async def on_member_join(member):
 
         embed.add_field(
             name="🎥 Start",
-            value="Use `/search` to find movies and rate them ⭐",
+            value="Use `/search` to find and rate movies ⭐",
             inline=False
         )
 
         await channel.send(embed=embed)
 
 # =========================
-# PURGE COMMAND (FIXED)
+# PURGE COMMAND
 # =========================
 
 @bot.tree.command(name="purge", description="Delete messages (Admin only)")
@@ -82,12 +91,11 @@ async def purge(interaction: discord.Interaction, amount: int):
         await interaction.response.send_message("❌ Invalid amount", ephemeral=True)
         return
 
-    await interaction.channel.purge(limit=amount)
+    await interaction.response.defer(ephemeral=True)
 
-    await interaction.response.send_message(
-        f"🧹 Deleted {amount} messages.",
-        ephemeral=True
-    )
+    deleted = await interaction.channel.purge(limit=amount)
+
+    await interaction.followup.send(f"🧹 Deleted {len(deleted)} messages.")
 
 # =========================
 # AUTOCOMPLETE
@@ -111,7 +119,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     return choices
 
 # =========================
-# RATING SYSTEM
+# RATING SYSTEM (BUTTON UI)
 # =========================
 
 class RatingView(discord.ui.View):
@@ -154,8 +162,6 @@ class RatingView(discord.ui.View):
 
         await interaction.response.edit_message(embed=embed, view=None)
 
-    # ⭐ Buttons
-
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.handle(i, 0.5)
 
@@ -187,7 +193,7 @@ class RatingView(discord.ui.View):
     async def b5(self, i, b): await self.handle(i, 5.0)
 
 # =========================
-# SEARCH
+# SEARCH COMMAND
 # =========================
 
 @bot.tree.command(name="search", description="Search movies")
@@ -195,11 +201,13 @@ class RatingView(discord.ui.View):
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
 
+    await interaction.response.defer()
+
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
     data = requests.get(url).json()
 
     if not data.get("results"):
-        await interaction.response.send_message("❌ Movie not found")
+        await interaction.followup.send("❌ Movie not found")
         return
 
     movie = data["results"][0]
@@ -246,19 +254,10 @@ async def search(interaction: discord.Interaction, movie_name: str):
 
     view = RatingView(movie_id, title)
 
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.followup.send(embed=embed, view=view)
 
 # =========================
-# READY
-# =========================
-
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"{bot.user} is online!")
-
-# =========================
-# RUN
+# RUN BOT
 # =========================
 
 bot.run(TOKEN)
