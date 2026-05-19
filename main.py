@@ -22,7 +22,7 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 # =========================
 
 intents = discord.Intents.default()
-intents.members = True  # IMPORTANT for welcome system
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -36,7 +36,6 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS ratings (
     user_id TEXT,
-    username TEXT,
     movie_id INTEGER,
     movie_title TEXT,
     rating REAL,
@@ -57,30 +56,29 @@ async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
 
     if channel:
-
         embed = discord.Embed(
             title="🎬 Welcome to Cinema Server!",
-            description=f"Hey {member.mention}, welcome to the movie universe 🍿",
+            description=f"Hey {member.mention}, welcome to the movie world 🍿",
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(
-            name="🎥 Get Started",
-            value="Use `/search` to find movies and rate them ⭐",
+            name="🎥 Start Here",
+            value="Use `/search` to find and rate movies ⭐",
             inline=False
         )
 
-        embed.set_footer(text="Enjoy your stay 🎬")
+        embed.set_footer(text="CinemaBot • Enjoy your stay 🎬")
 
         await channel.send(embed=embed)
 
 # =========================
-# CLEAR COMMAND
+# CLEAN COMMAND (FIXED)
 # =========================
 
-@bot.tree.command(name="clear", description="Delete messages (Admin only)")
+@bot.tree.command(name="clean", description="Delete messages (Admin only)")
 @app_commands.checks.has_permissions(manage_messages=True)
-async def clear(interaction: discord.Interaction, amount: int):
+async def clean(interaction: discord.Interaction, amount: int):
 
     await interaction.channel.purge(limit=amount)
 
@@ -111,7 +109,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     return choices
 
 # =========================
-# RATING SYSTEM
+# RATING VIEW
 # =========================
 
 class RatingView(discord.ui.View):
@@ -126,13 +124,12 @@ class RatingView(discord.ui.View):
         cursor = conn.cursor()
 
         cursor.execute("""
-        INSERT INTO ratings (user_id, username, movie_id, movie_title, rating)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO ratings (user_id, movie_id, movie_title, rating)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(user_id, movie_id)
         DO UPDATE SET rating=excluded.rating
         """, (
             str(interaction.user.id),
-            str(interaction.user),
             self.movie_id,
             self.movie_title,
             rating
@@ -147,13 +144,15 @@ class RatingView(discord.ui.View):
 
         embed = discord.Embed(
             title="🎬 Rating Saved",
-            description=f"{self.movie_title}",
+            description=f"**{self.movie_title}**",
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(name="⭐ Your Rating", value=f"{rating}/5", inline=True)
 
         await interaction.response.edit_message(embed=embed, view=None)
+
+    # ⭐ Buttons
 
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.handle(i, 0.5)
@@ -186,7 +185,7 @@ class RatingView(discord.ui.View):
     async def b5(self, i, b): await self.handle(i, 5.0)
 
 # =========================
-# SEARCH
+# SEARCH COMMAND
 # =========================
 
 @bot.tree.command(name="search", description="Search movies")
@@ -211,15 +210,23 @@ async def search(interaction: discord.Interaction, movie_name: str):
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
+    # AVG rating
     cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=?", (movie_id,))
     avg = cursor.fetchone()[0]
+
+    # USER rating
+    cursor.execute(
+        "SELECT rating FROM ratings WHERE movie_id=? AND user_id=?",
+        (movie_id, str(interaction.user.id))
+    )
+    user_rating = cursor.fetchone()
 
     conn.close()
 
     if avg is None:
         avg = 0.0
-
-    avg = round(avg, 1)
+    else:
+        avg = round(avg, 1)
 
     embed = discord.Embed(
         title=f"🎬 {title}",
@@ -228,6 +235,11 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
     embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
+
+    if user_rating:
+        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0]}/5", inline=True)
+    else:
+        embed.add_field(name="👤 Your Rating", value="Not rated yet", inline=True)
 
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
