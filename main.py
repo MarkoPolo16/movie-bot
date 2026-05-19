@@ -20,12 +20,17 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 # =========================
 
 intents = discord.Intents.default()
-intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
+# OPTIONAL: set your server ID here for instant sync
+GUILD_ID = None  # <- optional: set your Discord Server ID for faster updates
 
 # =========================
-# DATABASE
+# DATABASE FIX (NO CORRUPTION)
 # =========================
 
 conn = sqlite3.connect("ratings.db")
@@ -45,7 +50,7 @@ conn.commit()
 conn.close()
 
 # =========================
-# AUTOCOMPLETE
+# AUTOCOMPLETE (TMDB)
 # =========================
 
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
@@ -56,26 +61,26 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}"
     data = requests.get(url).json()
 
-    results = []
+    choices = []
 
     for movie in data.get("results", [])[:5]:
         title = movie.get("title")
         if title:
-            results.append(app_commands.Choice(name=title, value=title))
+            choices.append(app_commands.Choice(name=title, value=title))
 
-    return results
+    return choices
 
 # =========================
-# NEON BUTTON VIEW (0.5 - 5 ⭐)
+# RATING BUTTON SYSTEM
 # =========================
 
 class RatingView(discord.ui.View):
     def __init__(self, movie_id: int, movie_title: str):
-        super().__init__(timeout=60)
+        super().__init__(timeout=120)
         self.movie_id = movie_id
         self.movie_title = movie_title
 
-    async def save_rating(self, interaction: discord.Interaction, rating: float):
+    def save(self, interaction: discord.Interaction, rating: float):
 
         conn = sqlite3.connect("ratings.db")
         cursor = conn.cursor()
@@ -94,11 +99,14 @@ class RatingView(discord.ui.View):
         conn.commit()
         conn.close()
 
-        # update message (neon style embed)
+    async def respond(self, interaction: discord.Interaction, rating: float):
+
+        self.save(interaction, rating)
+
         embed = discord.Embed(
             title="🎬 Rating Saved",
             description=f"{interaction.user.mention} rated **{self.movie_title}**",
-            color=discord.Color.from_rgb(0, 255, 255)  # neon cyan
+            color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(name="⭐ Rating", value=f"{rating}/5", inline=False)
@@ -107,51 +115,58 @@ class RatingView(discord.ui.View):
 
     # ⭐ BUTTONS
 
-    @discord.ui.button(label="0.5 ⭐", style=discord.ButtonStyle.secondary)
-    async def half(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 0.5)
+    @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
+    async def b05(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 0.5)
 
-    @discord.ui.button(label="1 ⭐", style=discord.ButtonStyle.secondary)
-    async def one(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 1)
+    @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
+    async def b1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 1)
 
-    @discord.ui.button(label="2 ⭐", style=discord.ButtonStyle.secondary)
-    async def two(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 2)
+    @discord.ui.button(label="2⭐", style=discord.ButtonStyle.secondary)
+    async def b2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 2)
 
-    @discord.ui.button(label="3 ⭐", style=discord.ButtonStyle.primary)
-    async def three(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 3)
+    @discord.ui.button(label="3⭐", style=discord.ButtonStyle.primary)
+    async def b3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 3)
 
-    @discord.ui.button(label="4 ⭐", style=discord.ButtonStyle.primary)
-    async def four(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 4)
+    @discord.ui.button(label="4⭐", style=discord.ButtonStyle.primary)
+    async def b4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 4)
 
-    @discord.ui.button(label="5 ⭐", style=discord.ButtonStyle.success)
-    async def five(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.save_rating(interaction, 5)
+    @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
+    async def b5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.respond(interaction, 5)
 
 # =========================
-# BOT READY
+# READY EVENT (FIXED SYNC)
 # =========================
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"{bot.user} is online!")
+
+    if GUILD_ID:
+        guild = discord.Object(id=GUILD_ID)
+        await bot.tree.sync(guild=guild)
+    else:
+        await bot.tree.sync()
+
+    print(f"{bot.user} is online and synced!")
 
 # =========================
-# SEARCH (NEON UI + BUTTONS)
+# SEARCH COMMAND
 # =========================
 
 @bot.tree.command(name="search", description="Search a movie")
+@app_commands.describe(movie_name="Type a movie name")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
     data = requests.get(url).json()
 
-    if not data["results"]:
+    if not data.get("results"):
         await interaction.response.send_message("❌ Movie not found")
         return
 
@@ -164,7 +179,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
     poster = movie.get("poster_path")
 
     # =========================
-    # SERVER RATING
+    # SERVER AVG RATING
     # =========================
 
     conn = sqlite3.connect("ratings.db")
@@ -175,27 +190,26 @@ async def search(interaction: discord.Interaction, movie_name: str):
         (movie_id,)
     )
 
-    result = cursor.fetchone()
+    avg = cursor.fetchone()[0]
     conn.close()
 
-    rating = result[0]
-    if rating is None:
-        rating = 0.0
+    if avg is None:
+        avg = 0.0
 
-    rating = round(rating, 1)
+    avg = round(avg, 1)
 
     # =========================
-    # NEON EMBED (LETTERBOXD STYLE)
+    # NEON EMBED
     # =========================
 
     embed = discord.Embed(
         title=f"🎬 {title}",
         description=overview[:1000],
-        color=discord.Color.from_rgb(0, 255, 255)  # neon cyan
+        color=discord.Color.from_rgb(0, 255, 255)
     )
 
     embed.add_field(name="📅 Release", value=release, inline=True)
-    embed.add_field(name="⭐ Server Rating", value=f"{rating}/5", inline=True)
+    embed.add_field(name="⭐ Server Rating", value=f"{avg}/5", inline=True)
 
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
@@ -222,7 +236,7 @@ async def topmovies(interaction: discord.Interaction):
     LIMIT 10
     """)
 
-    movies = cursor.fetchall()
+    data = cursor.fetchall()
     conn.close()
 
     embed = discord.Embed(
@@ -230,7 +244,7 @@ async def topmovies(interaction: discord.Interaction):
         color=discord.Color.from_rgb(0, 255, 255)
     )
 
-    for i, m in enumerate(movies, start=1):
+    for i, m in enumerate(data, start=1):
         embed.add_field(
             name=f"{i}. {m[0]}",
             value=f"⭐ {round(m[1],1)}/5 ({m[2]} votes)",
