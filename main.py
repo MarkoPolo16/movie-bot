@@ -34,7 +34,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS ratings (
     user_id TEXT,
     username TEXT,
-    movie TEXT,
+    movie_id INTEGER,
+    movie_title TEXT,
     rating REAL
 )
 """)
@@ -43,7 +44,7 @@ conn.commit()
 conn.close()
 
 # =========================
-# BOT ONLINE
+# BOT READY
 # =========================
 
 @bot.event
@@ -59,7 +60,7 @@ async def ping(ctx):
     await ctx.send("🏓 Pong!")
 
 # =========================
-# FILM SUCHEN
+# SEARCH MOVIE
 # =========================
 
 @bot.command()
@@ -76,25 +77,25 @@ async def search(ctx, *, movie_name):
 
     movie = data["results"][0]
 
-    title = movie.get("title", "Unbekannt")
-    overview = movie.get("overview", "Keine Beschreibung vorhanden.")
-    release = movie.get("release_date", "Unbekannt")
+    movie_id = movie["id"]
+    title = movie.get("title", "Unknown")
+    overview = movie.get("overview", "No description available.")
+    release = movie.get("release_date", "Unknown")
     poster = movie.get("poster_path")
 
     # =========================
-    # SERVER RATING HOLEN
+    # SERVER RATING (FIXED)
     # =========================
 
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT AVG(rating) FROM ratings WHERE movie = ?",
-        (title,)
+        "SELECT AVG(rating) FROM ratings WHERE movie_id = ?",
+        (movie_id,)
     )
 
     result = cursor.fetchone()
-
     conn.close()
 
     server_rating = result[0]
@@ -123,25 +124,41 @@ async def search(ctx, *, movie_name):
     await ctx.send(embed=embed)
 
 # =========================
-# FILM BEWERTEN
+# RATE MOVIE
 # =========================
 
 @bot.command()
 async def rate(ctx, rating: float, *, movie_name):
 
     if rating < 0.5 or rating > 5:
-        await ctx.send("❌ Bewertung muss zwischen 0.5 und 5 sein.")
+        await ctx.send("❌ Rating must be between 0.5 and 5.")
         return
 
+    # GET MOVIE FROM TMDB AGAIN (TO GET ID)
+    url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
+    response = requests.get(url)
+    data = response.json()
+
+    if not data["results"]:
+        await ctx.send("❌ Movie not found.")
+        return
+
+    movie = data["results"][0]
+
+    movie_id = movie["id"]
+    title = movie["title"]
+
+    # SAVE TO DB
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO ratings VALUES (?, ?, ?, ?)",
+        "INSERT INTO ratings VALUES (?, ?, ?, ?, ?)",
         (
             str(ctx.author.id),
             str(ctx.author),
-            movie_name,
+            movie_id,
+            title,
             rating
         )
     )
@@ -150,21 +167,16 @@ async def rate(ctx, rating: float, *, movie_name):
     conn.close()
 
     stars = "⭐" * int(rating)
-
     if rating % 1 != 0:
         stars += "✨"
 
     embed = discord.Embed(
-        title="🍿 Neue Bewertung",
-        description=f"{ctx.author.mention} hat **{movie_name}** bewertet.",
+        title="🍿 Rating Saved",
+        description=f"{ctx.author.mention} rated **{title}**",
         color=discord.Color.gold()
     )
 
-    embed.add_field(
-        name="⭐ Rating",
-        value=f"{rating}/5 {stars}",
-        inline=False
-    )
+    embed.add_field(name="⭐ Rating", value=f"{rating}/5 {stars}", inline=False)
 
     await ctx.send(embed=embed)
 
@@ -179,35 +191,34 @@ async def topmovies(ctx):
     cursor = conn.cursor()
 
     cursor.execute("""
-    SELECT movie, AVG(rating) as avg_rating, COUNT(*) as votes
+    SELECT movie_title, AVG(rating) as avg_rating, COUNT(*) as votes
     FROM ratings
-    GROUP BY movie
+    GROUP BY movie_id
     ORDER BY avg_rating DESC
     LIMIT 10
     """)
 
     movies = cursor.fetchall()
-
     conn.close()
 
     if not movies:
-        await ctx.send("❌ Keine Bewertungen vorhanden.")
+        await ctx.send("❌ No ratings yet.")
         return
 
     embed = discord.Embed(
-        title="🏆 Top Rated Movies",
+        title="🏆 Top Movies",
         color=discord.Color.purple()
     )
 
     for i, movie in enumerate(movies, start=1):
 
-        movie_name = movie[0]
-        avg_rating = round(movie[1], 1)
+        title = movie[0]
+        avg = round(movie[1], 1)
         votes = movie[2]
 
         embed.add_field(
-            name=f"#{i} — {movie_name}",
-            value=f"⭐ {avg_rating}/5 ({votes} Bewertungen)",
+            name=f"{i}. {title}",
+            value=f"⭐ {avg}/5 ({votes} votes)",
             inline=False
         )
 
@@ -224,73 +235,52 @@ async def myratings(ctx):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT movie, rating FROM ratings WHERE user_id = ?",
+        "SELECT movie_title, rating FROM ratings WHERE user_id = ?",
         (str(ctx.author.id),)
     )
 
     ratings = cursor.fetchall()
-
     conn.close()
 
     if not ratings:
-        await ctx.send("❌ Du hast noch keine Filme bewertet.")
+        await ctx.send("❌ You haven't rated any movies yet.")
         return
 
     embed = discord.Embed(
-        title=f"🎬 Bewertungen von {ctx.author.name}",
+        title=f"🎬 {ctx.author.name}'s Ratings",
         color=discord.Color.blue()
     )
 
-    for movie in ratings:
-
+    for r in ratings:
         embed.add_field(
-            name=movie[0],
-            value=f"⭐ {movie[1]}/5",
+            name=r[0],
+            value=f"⭐ {r[1]}/5",
             inline=False
         )
 
     await ctx.send(embed=embed)
 
 # =========================
-# HILFE
+# HELP
 # =========================
 
 @bot.command()
-async def movies(ctx):
+async def helpme(ctx):
 
     embed = discord.Embed(
-        title="🎬 Movie Bot Commands",
+        title="🎬 CinemaBot Commands",
         color=discord.Color.red()
     )
 
-    embed.add_field(
-        name="!search Interstellar",
-        value="Film suchen",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!rate 4.5 Interstellar",
-        value="Film bewerten",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!topmovies",
-        value="Top Filme anzeigen",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!myratings",
-        value="Eigene Bewertungen anzeigen",
-        inline=False
-    )
+    embed.add_field(name="!search movie", value="Search a movie", inline=False)
+    embed.add_field(name="!rate 4.5 movie", value="Rate a movie", inline=False)
+    embed.add_field(name="!topmovies", value="Top rated movies", inline=False)
+    embed.add_field(name="!myratings", value="Your ratings", inline=False)
 
     await ctx.send(embed=embed)
 
 # =========================
-# BOT START
+# START BOT
 # =========================
 
 bot.run(TOKEN)
