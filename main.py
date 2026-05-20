@@ -7,7 +7,7 @@ import requests
 import sqlite3
 
 # =========================
-# ENV
+# LOAD ENV
 # =========================
 
 load_dotenv()
@@ -22,7 +22,9 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 # =========================
 
 intents = discord.Intents.default()
+
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(
     command_prefix="!",
@@ -55,11 +57,13 @@ conn.close()
 
 @bot.event
 async def on_ready():
+
     await bot.tree.sync()
+
     print(f"🎬 {bot.user} is online!")
 
 # =========================
-# WELCOME SYSTEM
+# WELCOME MESSAGE
 # =========================
 
 @bot.event
@@ -84,40 +88,40 @@ async def on_member_join(member):
         await channel.send(embed=embed)
 
 # =========================
-# PREFIX PURGE (NO / COMMAND)
+# PREFIX PURGE COMMAND
 # =========================
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def purge(ctx, amount: int):
 
-    # Max limit
+    # MAX LIMIT
     if amount > 100:
         amount = 100
 
-    # Min limit
+    # MIN LIMIT
     if amount < 1:
         return
 
     try:
 
-        # Löscht command message selbst
+        # Delete command message
         await ctx.message.delete()
 
-        # Holt existierende Nachrichten
+        # Get existing messages
         messages = []
 
         async for msg in ctx.channel.history(limit=amount):
             messages.append(msg)
 
-        # Löscht alle gefundenen
+        # Delete all found messages
         await ctx.channel.delete_messages(messages)
 
     except Exception as e:
 
-        msg = await ctx.send(f"❌ Error: {e}")
+        error_msg = await ctx.send(f"❌ Error: {e}")
 
-        await msg.delete(delay=5)
+        await error_msg.delete(delay=5)
 
 # =========================
 # AUTOCOMPLETE
@@ -129,6 +133,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
         return []
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}"
+
     data = requests.get(url).json()
 
     choices = []
@@ -138,6 +143,7 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
         title = movie.get("title")
 
         if title:
+
             choices.append(
                 app_commands.Choice(
                     name=title,
@@ -148,12 +154,13 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     return choices
 
 # =========================
-# RATING VIEW
+# RATING BUTTON VIEW
 # =========================
 
 class RatingView(discord.ui.View):
 
     def __init__(self, movie_id: int, movie_title: str):
+
         super().__init__(timeout=120)
 
         self.movie_id = movie_id
@@ -165,7 +172,12 @@ class RatingView(discord.ui.View):
         cursor = conn.cursor()
 
         cursor.execute("""
-        INSERT INTO ratings (user_id, movie_id, movie_title, rating)
+        INSERT INTO ratings (
+            user_id,
+            movie_id,
+            movie_title,
+            rating
+        )
         VALUES (?, ?, ?, ?)
         ON CONFLICT(user_id, movie_id)
         DO UPDATE SET rating=excluded.rating
@@ -186,7 +198,7 @@ class RatingView(discord.ui.View):
         conn = sqlite3.connect("ratings.db")
         cursor = conn.cursor()
 
-        # Average rating
+        # Average Rating
         cursor.execute(
             "SELECT AVG(rating) FROM ratings WHERE movie_id=?",
             (self.movie_id,)
@@ -272,10 +284,23 @@ class RatingView(discord.ui.View):
 # SEARCH COMMAND
 # =========================
 
-@bot.tree.command(name="search", description="Search movies")
-@app_commands.describe(movie_name="Movie name")
-@app_commands.autocomplete(movie_name=movie_autocomplete)
-async def search(interaction: discord.Interaction, movie_name: str):
+@bot.tree.command(
+    name="search",
+    description="Search movies"
+)
+
+@app_commands.describe(
+    movie_name="Movie name"
+)
+
+@app_commands.autocomplete(
+    movie_name=movie_autocomplete
+)
+
+async def search(
+    interaction: discord.Interaction,
+    movie_name: str
+):
 
     await interaction.response.defer()
 
@@ -301,7 +326,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
-    # Average Rating
+    # Average rating
     cursor.execute(
         "SELECT AVG(rating) FROM ratings WHERE movie_id=?",
         (movie_id,)
@@ -309,7 +334,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
 
     avg = cursor.fetchone()[0]
 
-    # User Rating
+    # User rating
     cursor.execute(
         "SELECT rating FROM ratings WHERE movie_id=? AND user_id=?",
         (movie_id, str(interaction.user.id))
