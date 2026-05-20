@@ -8,19 +8,19 @@ from threading import Thread
 import requests
 import psycopg2
 
-# =========================
-# LOAD ENV
-# =========================
+# ==========================================
+# ENV-VARIABLEN LADEN (Für lokalen PC-Test)
+# ==========================================
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL")  # Hier holt er sich deinen Supabase-Link
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 WELCOME_CHANNEL_ID = 1506237698304774215
 
 # ==========================================
-# REINES WACHHALTE-SYSTEM FÜR RENDER
+# WEBSERVER FÜR RENDER (Hält Bot online)
 # ==========================================
 app = Flask('')
 
@@ -29,6 +29,7 @@ def home():
     return "CinemaBot DB-Edition is perfectly online!"
 
 def run_web():
+    # Render verlangt zwingend, dass wir den Port dynamisch auslesen
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
@@ -37,9 +38,9 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# =========================
-# INTENTS
-# =========================
+# ==========================================
+# DISCORD BOT INTENTS SETTINGS
+# ==========================================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -49,39 +50,44 @@ bot = commands.Bot(
     intents=intents
 )
 
-# =========================
-# DATABASE SETUP (PostgreSQL)
-# =========================
+# ==========================================
+# SUPABASE DATENBANK INITIALISIERUNG
+# ==========================================
 def init_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS ratings (
-        user_id TEXT,
-        movie_id INTEGER,
-        movie_title TEXT,
-        rating REAL,
-        PRIMARY KEY (user_id, movie_id)
-    )
-    """)
-    conn.commit()
-    cursor.close()
-    conn.close()
+    if not DATABASE_URL:
+        print("❌ CRITICAL ERROR: DATABASE_URL environment variable is missing!")
+        return
+        
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ratings (
+            user_id TEXT,
+            movie_id INTEGER,
+            movie_title TEXT,
+            rating REAL,
+            PRIMARY KEY (user_id, movie_id)
+        )
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("✅ Supabase cloud database connected and table initialized!")
+    except Exception as e:
+        print(f"❌ DATABASE ERROR during initialization: {e}")
 
-# Datenbank-Tabelle in der Cloud initialisieren
+# Tabelle beim Skriptstart automatisch prüfen/erstellen
 init_db()
 
-# =========================
-# READY
-# =========================
+# ==========================================
+# DISCORD BOT EVENTS
+# ==========================================
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print(f"🎬 {bot.user} is online and connected to Supabase!")
+    print(f"🎬 {bot.user} is online and fully synced with Discord!")
 
-# =========================
-# WELCOME MESSAGE
-# =========================
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
@@ -98,9 +104,9 @@ async def on_member_join(member):
         )
         await channel.send(embed=embed)
 
-# =========================
-# PREFIX PURGE COMMAND
-# =========================
+# ==========================================
+# ADMIN PREFIX COMMAND (PURGE)
+# ==========================================
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def purge(ctx, amount: int):
@@ -119,31 +125,28 @@ async def purge(ctx, amount: int):
         error_msg = await ctx.send(f"❌ Error: {e}")
         await error_msg.delete(delay=5)
 
-# =========================
-# AUTOCOMPLETE
-# =========================
+# ==========================================
+# MOVIE AUTOCOMPLETE FOR SLASH COMMAND
+# ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
-    if not current:
+    if not current or not TMDB_API_KEY:
         return []
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}"
-    data = requests.get(url).json()
-    choices = []
+    try:
+        data = requests.get(url).json()
+        choices = []
+        for movie in data.get("results", [])[:5]:
+            title = movie.get("title")
+            if title:
+                choices.append(app_commands.Choice(name=title, value=title))
+        return choices
+    except Exception:
+        return []
 
-    for movie in data.get("results", [])[:5]:
-        title = movie.get("title")
-        if title:
-            choices.append(
-                app_commands.Choice(
-                    name=title,
-                    value=title
-                )
-            )
-    return choices
-
-# =========================
-# RATING BUTTON VIEW
-# =========================
+# ==========================================
+# MOVIE RATING INTERACTIVE BUTTONS
+# ==========================================
 class RatingView(discord.ui.View):
     def __init__(self, movie_id: int, movie_title: str):
         super().__init__(timeout=120)
@@ -172,82 +175,62 @@ class RatingView(discord.ui.View):
         avg = cursor.fetchone()[0]
         conn.close()
 
-        if avg is None:
-            avg = 0.0
-        else:
-            avg = round(avg, 1)
+        avg = round(avg, 1) if avg is not None else 0.0
 
         embed = discord.Embed(
             title=f"🎬 {self.movie_title}",
             description="Your rating has been saved.",
             color=discord.Color.from_rgb(0, 255, 255)
         )
-        embed.add_field(
-            name="⭐ Average Rating",
-            value=f"{avg}/5",
-            inline=True
-        )
-        embed.add_field(
-            name="👤 Your Rating",
-            value=f"{rating}/5",
-            inline=True
-        )
+        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
+        embed.add_field(name="👤 Your Rating", value=f"{rating}/5", inline=True)
+        
         await interaction.response.edit_message(embed=embed, view=None)
 
-    # =========================
-    # BUTTONS
-    # =========================
+    # BUTTON DEFINITIONS
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
-    async def b05(self, interaction, button):
-        await self.handle(interaction, 0.5)
+    async def b05(self, interaction, button): await self.handle(interaction, 0.5)
 
     @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
-    async def b1(self, interaction, button):
-        await self.handle(interaction, 1.0)
+    async def b1(self, interaction, button): await self.handle(interaction, 1.0)
 
     @discord.ui.button(label="1.5⭐", style=discord.ButtonStyle.secondary)
-    async def b15(self, interaction, button):
-        await self.handle(interaction, 1.5)
+    async def b15(self, interaction, button): await self.handle(interaction, 1.5)
 
     @discord.ui.button(label="2⭐", style=discord.ButtonStyle.secondary)
-    async def b2(self, interaction, button):
-        await self.handle(interaction, 2.0)
+    async def b2(self, interaction, button): await self.handle(interaction, 2.0)
 
     @discord.ui.button(label="2.5⭐", style=discord.ButtonStyle.secondary)
-    async def b25(self, interaction, button):
-        await self.handle(interaction, 2.5)
+    async def b25(self, interaction, button): await self.handle(interaction, 2.5)
 
     @discord.ui.button(label="3⭐", style=discord.ButtonStyle.primary)
-    async def b3(self, interaction, button):
-        await self.handle(interaction, 3.0)
+    async def b3(self, interaction, button): await self.handle(interaction, 3.0)
 
     @discord.ui.button(label="3.5⭐", style=discord.ButtonStyle.primary)
-    async def b35(self, interaction, button):
-        await self.handle(interaction, 3.5)
+    async def b35(self, interaction, button): await self.handle(interaction, 3.5)
 
     @discord.ui.button(label="4⭐", style=discord.ButtonStyle.success)
-    async def b4(self, interaction, button):
-        await self.handle(interaction, 4.0)
+    async def b4(self, interaction, button): await self.handle(interaction, 4.0)
 
     @discord.ui.button(label="4.5⭐", style=discord.ButtonStyle.success)
-    async def b45(self, interaction, button):
-        await self.handle(interaction, 4.5)
+    async def b45(self, interaction, button): await self.handle(interaction, 4.5)
 
     @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
-    async def b5(self, interaction, button):
-        await self.handle(interaction, 5.0)
+    async def b5(self, interaction, button): await self.handle(interaction, 5.0)
 
-# =========================
-# SEARCH COMMAND
-# =========================
-@bot.tree.command(
-    name="search",
-    description="Search movies"
-)
-@app_commands.describe(movie_name="Movie name")
+# ==========================================
+# DISCORD SLASH COMMANDS (/search)
+# ==========================================
+@bot.tree.command(name="search", description="Search and rate movies")
+@app_commands.describe(movie_name="Name of the movie")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
+    
+    if not TMDB_API_KEY:
+        await interaction.followup.send("❌ Movie API configuration is missing.")
+        return
+
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
     data = requests.get(url).json()
 
@@ -264,43 +247,23 @@ async def search(interaction: discord.Interaction, movie_name: str):
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
-    # Durchschnitt berechnen
     cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie_id,))
     avg = cursor.fetchone()[0]
+    avg = round(avg, 1) if avg is not None else 0.0
 
-    # Eigenes User Rating holen
     cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie_id, str(interaction.user.id)))
     user_rating = cursor.fetchone()
     conn.close()
-
-    if avg is None:
-        avg = 0.0
-    else:
-        avg = round(avg, 1)
 
     embed = discord.Embed(
         title=f"🎬 {title}",
         description=overview[:1000],
         color=discord.Color.from_rgb(0, 255, 255)
     )
-    embed.add_field(
-        name="⭐ Average Rating",
-        value=f"{avg}/5",
-        inline=True
-    )
-
-    if user_rating:
-        embed.add_field(
-            name="👤 Your Rating",
-            value=f"{user_rating[0]}/5",
-            inline=True
-        )
-    else:
-        embed.add_field(
-            name="👤 Your Rating",
-            value="Not rated yet",
-            inline=True
-        )
+    embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
+    
+    user_rating_str = f"{user_rating[0]}/5" if user_rating else "Not rated yet"
+    embed.add_field(name="👤 Your Rating", value=user_rating_str, inline=True)
 
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
@@ -309,11 +272,14 @@ async def search(interaction: discord.Interaction, movie_name: str):
     await interaction.followup.send(embed=embed, view=view)
 
 # ==========================================
-# START
+# APPLIKATIONS-STARTPUNKT
 # ==========================================
 if __name__ == "__main__":
-    print("⏳ Starte Webserver für Render...")
+    print("⏳ Starting Flask web server context for Render...")
     keep_alive()
     
-    print("⏳ Verbinde mit Discord...")
-    bot.run(TOKEN)
+    print("⏳ Connecting client context to Discord gateway...")
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("❌ CRITICAL ERROR: DISCORD_TOKEN is missing in Environment variables!")
