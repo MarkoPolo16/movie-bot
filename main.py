@@ -24,7 +24,10 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 intents = discord.Intents.default()
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 # =========================
 # DATABASE
@@ -65,27 +68,28 @@ async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
 
     if channel:
+
         embed = discord.Embed(
             title="🎬 Welcome to Cinema Server!",
-            description=f"Hey {member.mention}, welcome to the movie world 🍿",
+            description=f"Welcome {member.mention} 🍿",
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(
-            name="🎥 Start Here",
-            value="Use `/search` to find and rate movies ⭐",
+            name="🎥 Get Started",
+            value="Use `/search` to search and rate movies.",
             inline=False
         )
 
         await channel.send(embed=embed)
 
 # =========================
-# PURGE COMMAND (FULL FIX)
+# PREFIX PURGE (NO / COMMAND)
 # =========================
 
-@bot.tree.command(name="purge", description="Delete messages")
-@app_commands.checks.has_permissions(manage_messages=True)
-async def purge(interaction: discord.Interaction, amount: int):
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def purge(ctx, amount: int):
 
     # Max limit
     if amount > 100:
@@ -93,36 +97,27 @@ async def purge(interaction: discord.Interaction, amount: int):
 
     # Min limit
     if amount < 1:
-        await interaction.response.send_message(
-            "❌ Amount must be at least 1.",
-            ephemeral=True
-        )
         return
 
-    # Sofort antworten
-    await interaction.response.send_message(
-        f"🧹 Deleting up to {amount} messages...",
-        ephemeral=True
-    )
-
     try:
-        # Holt nur existierende Nachrichten
+
+        # Löscht command message selbst
+        await ctx.message.delete()
+
+        # Holt existierende Nachrichten
         messages = []
 
-        async for msg in interaction.channel.history(limit=amount):
+        async for msg in ctx.channel.history(limit=amount):
             messages.append(msg)
 
-        # Löscht nur vorhandene
-        deleted = await interaction.channel.delete_messages(messages)
-
-        await interaction.edit_original_response(
-            content=f"✅ Deleted {len(messages)} messages."
-        )
+        # Löscht alle gefundenen
+        await ctx.channel.delete_messages(messages)
 
     except Exception as e:
-        await interaction.edit_original_response(
-            content=f"❌ Error: {e}"
-        )
+
+        msg = await ctx.send(f"❌ Error: {e}")
+
+        await msg.delete(delay=5)
 
 # =========================
 # AUTOCOMPLETE
@@ -139,11 +134,15 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     choices = []
 
     for movie in data.get("results", [])[:5]:
+
         title = movie.get("title")
 
         if title:
             choices.append(
-                app_commands.Choice(name=title, value=title)
+                app_commands.Choice(
+                    name=title,
+                    value=title
+                )
             )
 
     return choices
@@ -160,7 +159,7 @@ class RatingView(discord.ui.View):
         self.movie_id = movie_id
         self.movie_title = movie_title
 
-    def save_rating(self, interaction: discord.Interaction, rating: float):
+    async def save_rating(self, interaction, rating):
 
         conn = sqlite3.connect("ratings.db")
         cursor = conn.cursor()
@@ -180,18 +179,42 @@ class RatingView(discord.ui.View):
         conn.commit()
         conn.close()
 
-    async def handle(self, interaction: discord.Interaction, rating: float):
+    async def handle(self, interaction, rating):
 
-        self.save_rating(interaction, rating)
+        await self.save_rating(interaction, rating)
+
+        conn = sqlite3.connect("ratings.db")
+        cursor = conn.cursor()
+
+        # Average rating
+        cursor.execute(
+            "SELECT AVG(rating) FROM ratings WHERE movie_id=?",
+            (self.movie_id,)
+        )
+
+        avg = cursor.fetchone()[0]
+
+        conn.close()
+
+        if avg is None:
+            avg = 0.0
+        else:
+            avg = round(avg, 1)
 
         embed = discord.Embed(
-            title="🎬 Rating Saved",
-            description=f"**{self.movie_title}**",
+            title=f"🎬 {self.movie_title}",
+            description="Your rating has been saved.",
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
         embed.add_field(
-            name="⭐ Your Rating",
+            name="⭐ Average Rating",
+            value=f"{avg}/5",
+            inline=True
+        )
+
+        embed.add_field(
+            name="👤 Your Rating",
             value=f"{rating}/5",
             inline=True
         )
@@ -233,7 +256,7 @@ class RatingView(discord.ui.View):
     async def b35(self, interaction, button):
         await self.handle(interaction, 3.5)
 
-    @discord.ui.button(label="4⭐", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="4⭐", style=discord.ButtonStyle.success)
     async def b4(self, interaction, button):
         await self.handle(interaction, 4.0)
 
@@ -257,10 +280,15 @@ async def search(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
+
     data = requests.get(url).json()
 
     if not data.get("results"):
-        await interaction.followup.send("❌ Movie not found")
+
+        await interaction.followup.send(
+            "❌ Movie not found."
+        )
+
         return
 
     movie = data["results"][0]
@@ -309,12 +337,15 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
     if user_rating:
+
         embed.add_field(
             name="👤 Your Rating",
             value=f"{user_rating[0]}/5",
             inline=True
         )
+
     else:
+
         embed.add_field(
             name="👤 Your Rating",
             value="Not rated yet",
@@ -322,6 +353,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
         )
 
     if poster:
+
         embed.set_image(
             url=f"https://image.tmdb.org/t/p/w500{poster}"
         )
