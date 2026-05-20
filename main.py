@@ -167,25 +167,29 @@ class RatingView(discord.ui.View):
         conn.close()
 
     async def handle(self, interaction, rating):
-        await self.save_rating(interaction, rating)
-        
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (self.movie_id,))
-        avg = cursor.fetchone()[0]
-        conn.close()
+        try:
+            await self.save_rating(interaction, rating)
+            
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            avg = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
 
-        avg = round(avg, 1) if avg is not None else 0.0
+            avg = round(avg, 1) if avg is not None else 0.0
 
-        embed = discord.Embed(
-            title=f"🎬 {self.movie_title}",
-            description="Your rating has been saved.",
-            color=discord.Color.from_rgb(0, 255, 255)
-        )
-        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
-        embed.add_field(name="👤 Your Rating", value=f"{rating}/5", inline=True)
-        
-        await interaction.response.edit_message(embed=embed, view=None)
+            embed = discord.Embed(
+                title=f"🎬 {self.movie_title}",
+                description="Your rating has been saved.",
+                color=discord.Color.from_rgb(0, 255, 255)
+            )
+            embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
+            embed.add_field(name="👤 Your Rating", value=f"{rating}/5", inline=True)
+            
+            await interaction.response.edit_message(embed=embed, view=None)
+        except Exception as e:
+            print(f"❌ Error during button rating process: {e}")
 
     # BUTTON DEFINITIONS
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
@@ -232,7 +236,12 @@ async def search(interaction: discord.Interaction, movie_name: str):
         return
 
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
-    data = requests.get(url).json()
+    
+    try:
+        data = requests.get(url).json()
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error fetching movie from TMDB: {e}")
+        return
 
     if not data.get("results"):
         await interaction.followup.send("❌ Movie not found.")
@@ -244,16 +253,23 @@ async def search(interaction: discord.Interaction, movie_name: str):
     overview = movie["overview"]
     poster = movie.get("poster_path")
 
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie_id,))
-    avg = cursor.fetchone()[0]
-    avg = round(avg, 1) if avg is not None else 0.0
+    # DB SICHERHEITSNETZ
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie_id,))
+        avg = cursor.fetchone()[0]
+        avg = round(avg, 1) if avg is not None else 0.0
 
-    cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie_id, str(interaction.user.id)))
-    user_rating = cursor.fetchone()
-    conn.close()
+        cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie_id, str(interaction.user.id)))
+        user_rating = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+    except Exception as db_error:
+        await interaction.followup.send(f"❌ Database connection failed during search: {db_error}")
+        return
 
     embed = discord.Embed(
         title=f"🎬 {title}",
