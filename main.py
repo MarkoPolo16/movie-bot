@@ -72,7 +72,7 @@ async def on_member_join(member):
         )
 
         embed.add_field(
-            name="🎥 Start",
+            name="🎥 Start Here",
             value="Use `/search` to find and rate movies ⭐",
             inline=False
         )
@@ -80,22 +80,49 @@ async def on_member_join(member):
         await channel.send(embed=embed)
 
 # =========================
-# PURGE COMMAND
+# PURGE COMMAND (FULL FIX)
 # =========================
 
-@bot.tree.command(name="purge", description="Delete messages (Admin only)")
+@bot.tree.command(name="purge", description="Delete messages")
 @app_commands.checks.has_permissions(manage_messages=True)
 async def purge(interaction: discord.Interaction, amount: int):
 
-    if amount <= 0:
-        await interaction.response.send_message("❌ Invalid amount", ephemeral=True)
+    # Max limit
+    if amount > 100:
+        amount = 100
+
+    # Min limit
+    if amount < 1:
+        await interaction.response.send_message(
+            "❌ Amount must be at least 1.",
+            ephemeral=True
+        )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    # Sofort antworten
+    await interaction.response.send_message(
+        f"🧹 Deleting up to {amount} messages...",
+        ephemeral=True
+    )
 
-    deleted = await interaction.channel.purge(limit=amount)
+    try:
+        # Holt nur existierende Nachrichten
+        messages = []
 
-    await interaction.followup.send(f"🧹 Deleted {len(deleted)} messages.")
+        async for msg in interaction.channel.history(limit=amount):
+            messages.append(msg)
+
+        # Löscht nur vorhandene
+        deleted = await interaction.channel.delete_messages(messages)
+
+        await interaction.edit_original_response(
+            content=f"✅ Deleted {len(messages)} messages."
+        )
+
+    except Exception as e:
+        await interaction.edit_original_response(
+            content=f"❌ Error: {e}"
+        )
 
 # =========================
 # AUTOCOMPLETE
@@ -113,18 +140,23 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
 
     for movie in data.get("results", [])[:5]:
         title = movie.get("title")
+
         if title:
-            choices.append(app_commands.Choice(name=title, value=title))
+            choices.append(
+                app_commands.Choice(name=title, value=title)
+            )
 
     return choices
 
 # =========================
-# RATING SYSTEM (BUTTON UI)
+# RATING VIEW
 # =========================
 
 class RatingView(discord.ui.View):
+
     def __init__(self, movie_id: int, movie_title: str):
         super().__init__(timeout=120)
+
         self.movie_id = movie_id
         self.movie_title = movie_title
 
@@ -158,39 +190,60 @@ class RatingView(discord.ui.View):
             color=discord.Color.from_rgb(0, 255, 255)
         )
 
-        embed.add_field(name="⭐ Your Rating", value=f"{rating}/5", inline=True)
+        embed.add_field(
+            name="⭐ Your Rating",
+            value=f"{rating}/5",
+            inline=True
+        )
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(
+            embed=embed,
+            view=None
+        )
+
+    # =========================
+    # BUTTONS
+    # =========================
 
     @discord.ui.button(label="0.5⭐", style=discord.ButtonStyle.secondary)
-    async def b05(self, i, b): await self.handle(i, 0.5)
+    async def b05(self, interaction, button):
+        await self.handle(interaction, 0.5)
 
     @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
-    async def b1(self, i, b): await self.handle(i, 1.0)
+    async def b1(self, interaction, button):
+        await self.handle(interaction, 1.0)
 
     @discord.ui.button(label="1.5⭐", style=discord.ButtonStyle.secondary)
-    async def b15(self, i, b): await self.handle(i, 1.5)
+    async def b15(self, interaction, button):
+        await self.handle(interaction, 1.5)
 
     @discord.ui.button(label="2⭐", style=discord.ButtonStyle.secondary)
-    async def b2(self, i, b): await self.handle(i, 2.0)
+    async def b2(self, interaction, button):
+        await self.handle(interaction, 2.0)
 
     @discord.ui.button(label="2.5⭐", style=discord.ButtonStyle.secondary)
-    async def b25(self, i, b): await self.handle(i, 2.5)
+    async def b25(self, interaction, button):
+        await self.handle(interaction, 2.5)
 
     @discord.ui.button(label="3⭐", style=discord.ButtonStyle.primary)
-    async def b3(self, i, b): await self.handle(i, 3.0)
+    async def b3(self, interaction, button):
+        await self.handle(interaction, 3.0)
 
     @discord.ui.button(label="3.5⭐", style=discord.ButtonStyle.primary)
-    async def b35(self, i, b): await self.handle(i, 3.5)
+    async def b35(self, interaction, button):
+        await self.handle(interaction, 3.5)
 
     @discord.ui.button(label="4⭐", style=discord.ButtonStyle.primary)
-    async def b4(self, i, b): await self.handle(i, 4.0)
+    async def b4(self, interaction, button):
+        await self.handle(interaction, 4.0)
 
     @discord.ui.button(label="4.5⭐", style=discord.ButtonStyle.success)
-    async def b45(self, i, b): await self.handle(i, 4.5)
+    async def b45(self, interaction, button):
+        await self.handle(interaction, 4.5)
 
     @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
-    async def b5(self, i, b): await self.handle(i, 5.0)
+    async def b5(self, interaction, button):
+        await self.handle(interaction, 5.0)
 
 # =========================
 # SEARCH COMMAND
@@ -220,13 +273,20 @@ async def search(interaction: discord.Interaction, movie_name: str):
     conn = sqlite3.connect("ratings.db")
     cursor = conn.cursor()
 
-    cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=?", (movie_id,))
+    # Average Rating
+    cursor.execute(
+        "SELECT AVG(rating) FROM ratings WHERE movie_id=?",
+        (movie_id,)
+    )
+
     avg = cursor.fetchone()[0]
 
+    # User Rating
     cursor.execute(
         "SELECT rating FROM ratings WHERE movie_id=? AND user_id=?",
         (movie_id, str(interaction.user.id))
     )
+
     user_rating = cursor.fetchone()
 
     conn.close()
@@ -242,19 +302,36 @@ async def search(interaction: discord.Interaction, movie_name: str):
         color=discord.Color.from_rgb(0, 255, 255)
     )
 
-    embed.add_field(name="⭐ Average Rating", value=f"{avg}/5", inline=True)
+    embed.add_field(
+        name="⭐ Average Rating",
+        value=f"{avg}/5",
+        inline=True
+    )
 
     if user_rating:
-        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0]}/5", inline=True)
+        embed.add_field(
+            name="👤 Your Rating",
+            value=f"{user_rating[0]}/5",
+            inline=True
+        )
     else:
-        embed.add_field(name="👤 Your Rating", value="Not rated yet", inline=True)
+        embed.add_field(
+            name="👤 Your Rating",
+            value="Not rated yet",
+            inline=True
+        )
 
     if poster:
-        embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
+        embed.set_image(
+            url=f"https://image.tmdb.org/t/p/w500{poster}"
+        )
 
     view = RatingView(movie_id, title)
 
-    await interaction.followup.send(embed=embed, view=view)
+    await interaction.followup.send(
+        embed=embed,
+        view=view
+    )
 
 # =========================
 # RUN BOT
