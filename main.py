@@ -176,6 +176,17 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str 
     except Exception as e:
         await ctx.send(f"❌ Fehler beim Timeout: {e}", delete_after=5)
 
+@bot.command(name="untimeout")
+@is_admin_or_owner()
+async def untimeout_cmd(ctx, member: discord.Member):
+    try:
+        await ctx.message.delete()
+        # Ein Timeout von None oder 0 Sekunden hebt die Stummschaltung sofort auf
+        await member.timeout(None, reason="Timeout vorzeitig aufgehoben")
+        await ctx.send(f"🔊 Das Timeout für **{member.mention}** wurde vorzeitig aufgehoben!", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Fehler beim Aufheben des Timeouts: {e}", delete_after=5)
+
 @bot.command(name="ban")
 @is_admin_or_owner()
 async def ban_cmd(ctx, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
@@ -185,6 +196,18 @@ async def ban_cmd(ctx, member: discord.Member, *, reason: str = "Kein Grund ange
         await ctx.send(f"🔨 **{member.name}** wurde dauerhaft vom Server gebannt. Grund: {reason}", delete_after=10)
     except Exception as e:
         await ctx.send(f"❌ Fehler beim Ban: {e}", delete_after=5)
+
+@bot.command(name="unban")
+@is_admin_or_owner()
+async def unban_cmd(ctx, user_id: str):
+    try:
+        await ctx.message.delete()
+        # Verwandelt den Text-String der ID in ein echtes Discord-User-Objekt
+        user = await bot.fetch_user(int(user_id))
+        await ctx.guild.unban(user)
+        await ctx.send(f"🕊️ **{user.name}** wurde erfolgreich entbannt und darf den Server wieder betreten!", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Fehler beim Entbannen (ID korrekt?): {e}", delete_after=5)
 
 # ==========================================
 # SEKTION: STRIKTE OWNER COMMANDS (Setups)
