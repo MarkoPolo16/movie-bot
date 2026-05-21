@@ -175,23 +175,22 @@ class VerifyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="✅ Verify", style=discord.ButtonStyle.success)
-    async def verify(self, interaction, button):
+    @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success)
+    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
 
-        # 🔥 FIX 1: Role exist check
         if role is None:
             await interaction.response.send_message(
-                "❌ Verify role not found (wrong ID)",
+                "❌ Role not found (wrong VERIFY_ROLE_ID)",
                 ephemeral=True
             )
             return
 
-        # 🔥 FIX 2: already has role
+        # already verified
         if role in interaction.user.roles:
             await interaction.response.send_message(
-                "ℹ️ You are already verified.",
+                "ℹ️ You already accepted the rules.",
                 ephemeral=True
             )
             return
@@ -200,13 +199,13 @@ class VerifyView(discord.ui.View):
             await interaction.user.add_roles(role)
 
             await interaction.response.send_message(
-                "🎉 You are now verified!",
+                "🎉 Rules accepted! You are now verified.",
                 ephemeral=True
             )
 
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ Bot has no permission to give roles (check role hierarchy)",
+                "❌ Bot cannot give role (check role hierarchy / Manage Roles)",
                 ephemeral=True
             )
 
@@ -215,7 +214,6 @@ class VerifyView(discord.ui.View):
                 f"❌ Error: {e}",
                 ephemeral=True
             )
-
 # ==========================================
 # 🎭 GENRE ROLES
 # ==========================================
