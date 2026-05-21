@@ -8,7 +8,7 @@ from threading import Thread
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL") # Deine Supabase-Verbindung aus Render
 
 # ==========================================
 # SECTION: CONFIG & IDS
@@ -67,7 +67,7 @@ def init_db():
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e: print(f"DB Error: {e}")
+    except Exception as e: print(f"Supabase Init Error: {e}")
 
 init_db()
 
@@ -153,14 +153,14 @@ class RoleToggleView(discord.ui.View):
         for label in GENRE_ROLES.keys(): self.add_item(RoleButton(label))
 
 # ==========================================
-# EVENTS & GLOBAL COMMAND ERROR HANDLER
+# EVENTS
 # ==========================================
 @bot.event
 async def on_ready():
     bot.add_view(AcceptRulesView())
     bot.add_view(RoleToggleView())
     await bot.tree.sync()
-    print(f"🎬 {bot.user} is ready!")
+    print(f"🎬 {bot.user} is ready and connected to Supabase!")
 
 @bot.event
 async def on_member_join(member):
@@ -174,11 +174,9 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         try: await ctx.message.delete()
         except: pass
-        
         msg = "You do not have permission to execute this command!"
         if str(error) == "ONLY_OWNER":
             msg = "This command is strictly restricted to the Server Owner!"
-            
         await ctx.send(f"❌ {ctx.author.name}, {msg}", delete_after=5)
         return
 
@@ -224,8 +222,7 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str 
         duration = datetime.timedelta(seconds=seconds)
         await member.timeout(duration, reason=reason)
         await ctx.send(f"⏱️ **{member.name}** has been timed out for **{seconds} seconds**. Reason: {reason}", delete_after=10)
-    except Exception as e:
-        await ctx.send(f"❌ Error applying timeout: {e}", delete_after=5)
+    except Exception as e: await ctx.send(f"❌ Error applying timeout: {e}", delete_after=5)
 
 @bot.command(name="untimeout")
 @is_admin_or_owner()
@@ -234,8 +231,7 @@ async def untimeout_cmd(ctx, member: discord.Member):
         await ctx.message.delete()
         await member.timeout(None, reason="Timeout removed early")
         await ctx.send(f"🔊 The timeout for **{member.name}** has been removed early!", delete_after=10)
-    except Exception as e:
-        await ctx.send(f"❌ Error removing timeout: {e}", delete_after=5)
+    except Exception as e: await ctx.send(f"❌ Error removing timeout: {e}", delete_after=5)
 
 @bot.command(name="ban")
 @is_admin_or_owner()
@@ -244,8 +240,7 @@ async def ban_cmd(ctx, member: discord.Member, *, reason: str = "No reason provi
         await ctx.message.delete()
         await member.ban(reason=reason)
         await ctx.send(f"🔨 **{member.name}** was permanently banned from the server. Reason: {reason}", delete_after=10)
-    except Exception as e:
-        await ctx.send(f"❌ Error banning member: {e}", delete_after=5)
+    except Exception as e: await ctx.send(f"❌ Error banning member: {e}", delete_after=5)
 
 @bot.command(name="unban")
 @is_admin_or_owner()
@@ -255,8 +250,7 @@ async def unban_cmd(ctx, user_id: str):
         user = await bot.fetch_user(int(user_id))
         await ctx.guild.unban(user)
         await ctx.send(f"🕊️ **{user.name}** has been successfully unbanned and can rejoin the server!", delete_after=10)
-    except Exception as e:
-        await ctx.send(f"❌ Error unbanning (Is the ID correct?): {e}", delete_after=5)
+    except Exception as e: await ctx.send(f"❌ Error unbanning: {e}", delete_after=5)
 
 # ==========================================
 # SECTION: STRICT OWNER COMMANDS (Setups)
@@ -282,7 +276,7 @@ async def setup_roles_cmd(ctx):
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
-# ORIGINAL MOVIE SEARCH & RATINGS
+# MOVIE SEARCH & RATINGS (SUPABASE POSTGRES)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
     if not current: return []
@@ -299,14 +293,17 @@ class RatingView(discord.ui.View):
         self.movie_title = movie_title
 
     async def handle_rating(self, interaction, rating):
+        if not DATABASE_URL: return
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
+            INSERT INTO ratings (user_id, movie_id, movie_title, rating) 
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             conn.commit()
+            
             cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (self.movie_id,))
             avg = round(cursor.fetchone()[0] or 0.0, 1)
             cursor.close()
@@ -340,18 +337,26 @@ async def search(interaction: discord.Interaction, movie_name: str):
         if not data.get("results"): return await interaction.followup.send("No movies found.")
         movie = data["results"][0]
         
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
-        avg = round(cursor.fetchone()[0] or 0.0, 1)
-        cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie["id"], str(interaction.user.id)))
-        user_rating = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        avg = 0.0
+        user_rating = None
+
+        if DATABASE_URL:
+            try:
+                conn = psycopg2.connect(DATABASE_URL)
+                cursor = conn.cursor()
+                cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
+                avg = round(cursor.fetchone()[0] or 0.0, 1)
+                
+                cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie["id"], str(interaction.user.id)))
+                res = cursor.fetchone()
+                if res: user_rating = res[0]
+                cursor.close()
+                conn.close()
+            except: pass
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.cyan())
         embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
-        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
+        embed.add_field(name="👤 Your Rating", value=f"{user_rating if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
