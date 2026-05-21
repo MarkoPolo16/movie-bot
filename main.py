@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging
+import os, discord, requests, psycopg2, logging, datetime
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -10,9 +10,14 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# HIER DEINE IDS ANPASSEN!
+# ==========================================
+# SEKTION: CONFIG & IDS (HIER ANPASSEN!)
+# ==========================================
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379  
+
+# Liste der erlaubten Admin-IDs (Zusätzlich zum Server-Owner)
+ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 GENRE_ROLES = {
     "👻 Horror Fan": "👻 Horror Fan",
@@ -63,6 +68,23 @@ def init_db():
 init_db()
 
 # ==========================================
+# RECHTE-CHECKS (SICHERHEITS-MAUERN)
+# ==========================================
+def is_owner():
+    async def predicate(ctx):
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        raise commands.CheckFailure("ONLY_OWNER")
+    return commands.check(predicate)
+
+def is_admin_or_owner():
+    async def predicate(ctx):
+        if ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS:
+            return True
+        raise commands.CheckFailure("NO_PERMISSION")
+    return commands.check(predicate)
+
+# ==========================================
 # BUTTON MENÜS (REGELN & GENRES)
 # ==========================================
 class AcceptRulesView(discord.ui.View):
@@ -101,7 +123,7 @@ class RoleToggleView(discord.ui.View):
         for label in GENRE_ROLES.keys(): self.add_item(RoleButton(label))
 
 # ==========================================
-# EVENTS
+# EVENTS & GLOBALER COMMAND-ERRORS HÄNDLER
 # ==========================================
 @bot.event
 async def on_ready():
@@ -117,17 +139,25 @@ async def on_member_join(member):
         embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.cyan())
         await channel.send(embed=embed)
 
-# ==========================================
-# OWNER PREFIX COMMANDS (NUR FÜR DICH!)
-# ==========================================
-@bot.command(name="purge")
-async def old_purge(ctx, amount: int):
-    if ctx.author.id != ctx.guild.owner_id:
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
         try: await ctx.message.delete()
         except: pass
-        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        
+        msg = "❌ Du hast keine Berechtigung, diesen Befehl auszuführen!"
+        if str(error) == "ONLY_OWNER":
+            msg = "❌ Dieser Befehl ist strikt dem Server-Owner vorbehalten!"
+            
+        await ctx.send(f"{ctx.author.mention}, {msg}", delete_after=5)
         return
 
+# ==========================================
+# SEKTION: ADMIN & OWNER COMMANDS (Moderation)
+# ==========================================
+@bot.command(name="purge")
+@is_admin_or_owner()
+async def purge_cmd(ctx, amount: int):
     if amount > 100: amount = 100
     if amount < 1: return
     try:
@@ -135,14 +165,33 @@ async def old_purge(ctx, amount: int):
         await ctx.channel.purge(limit=amount)
     except Exception as e: print(f"Purge Fehler: {e}")
 
-@bot.command(name="setup_rules")
-async def setup_rules(ctx):
-    if ctx.author.id != ctx.guild.owner_id:
-        try: await ctx.message.delete()
-        except: pass
-        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return
+@bot.command(name="timeout")
+@is_admin_or_owner()
+async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str = "Kein Grund angegeben"):
+    try:
+        await ctx.message.delete()
+        duration = datetime.timedelta(seconds=seconds)
+        await member.timeout(duration, reason=reason)
+        await ctx.send(f"⏱️ **{member.mention}** wurde für **{seconds} Sekunden** stummgeschaltet. Grund: {reason}", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Fehler beim Timeout: {e}", delete_after=5)
 
+@bot.command(name="ban")
+@is_admin_or_owner()
+async def ban_cmd(ctx, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+    try:
+        await ctx.message.delete()
+        await member.ban(reason=reason)
+        await ctx.send(f"🔨 **{member.name}** wurde dauerhaft vom Server gebannt. Grund: {reason}", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Fehler beim Ban: {e}", delete_after=5)
+
+# ==========================================
+# SEKTION: STRIKTE OWNER COMMANDS (Setups)
+# ==========================================
+@bot.command(name="setup_rules")
+@is_owner()
+async def setup_rules_cmd(ctx):
     try: await ctx.message.delete()
     except: pass
     embed = discord.Embed(
@@ -153,13 +202,8 @@ async def setup_rules(ctx):
     await ctx.send(embed=embed, view=AcceptRulesView())
 
 @bot.command(name="setup_roles")
-async def setup_roles(ctx):
-    if ctx.author.id != ctx.guild.owner_id:
-        try: await ctx.message.delete()
-        except: pass
-        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return
-
+@is_owner()
+async def setup_roles_cmd(ctx):
     try: await ctx.message.delete()
     except: pass
     embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Wähle deine Genres aus:", color=discord.Color.cyan())
