@@ -158,20 +158,25 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Clean the message content (remove spaces at start/end and turn lowercase)
+    # Clean the message content
     clean_content = message.content.strip().lower()
 
-    # Trigger ONLY for exact "cat me"
-    if clean_content == "cat me":
-        await message.channel.send("Im not gonna meow bro")
+    # Dictionary for automated text responses
+    custom_responses = {
+        "cat me": "Im not gonna meow bro",
+        "fuck you cinemabot": "no fuck you bro, ur arguing with a bot, you dumbass",
+        "cinemabot is trash": "My code is cleaner than your future, sit down kid.",
+        "shut up bot": "Make me. Oh wait, you can't even configure your own mic properly.",
+        "who asked cinemabot": "Nobody asked for your opinion either, yet here we are suffering from your presence.",
+        "your movies suck": "Cry me a river. Go watch Cocomelon if your attention span can't handle real cinema."
+    }
+
+    # If the message matches one of our custom triggers, reply and STOP processing further
+    if clean_content in custom_responses:
+        await message.channel.send(custom_responses[clean_content])
         return
 
-    # Trigger for "fuck you cinemabot"
-    if clean_content == "fuck you cinemabot":
-        await message.channel.send("no fuck you bro, ur arguing with a bot, you dumbass")
-        return
-
-    # Process normal prefix commands (!purge, etc.)
+    # Only process normal prefix commands (!purge, etc.) if no custom trigger matched
     await bot.process_commands(message)
 
 # ==========================================
