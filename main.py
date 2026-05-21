@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging, datetime, random
+import os, discord, requests, psycopg2, logging, datetime, random, time
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -51,8 +51,8 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Cache für bereits verarbeitete Nachrichten-IDs gegen Doppel-Trigger
-processed_messages = set()
+# Global rate limit tracker to prevent duplicate responses across server instances
+last_response_time = 0.0
 
 def init_db():
     if not DATABASE_URL: return
@@ -148,74 +148,74 @@ async def on_command_error(ctx, error):
         try: await ctx.message.delete()
         except: pass
         
-        msg = "you do not have permission to execute this command!"
+        msg = "You do not have permission to execute this command!"
         if str(error) == "ONLY_OWNER":
-            msg = "this command is strictly restricted to the Server Owner!"
+            msg = "This command is strictly restricted to the Server Owner!"
             
         await ctx.send(f"{ctx.author.mention}, ❌ {msg}", delete_after=5)
         return
 
 @bot.event
 async def on_message(message):
+    global last_response_time
+    
     # Ignore messages sent by the bot itself
     if message.author.bot:
         return
 
-    # Check if this precise message was already handled
-    if message.id in processed_messages:
-        return
-    
     # Clean the message content for matching
     clean_content = message.content.lower()
 
-    # 1. HARDCODED FIXED TRIGGER ("cat me" always stays identical)
+    # 1. HARDCODED FIXED TRIGGER ("cat me" check)
     if "cat me" in clean_content:
-        processed_messages.add(message.id)
+        current_time = time.time()
+        if current_time - last_response_time < 1.0:  # Block duplicate triggers within 1 second
+            return
+        last_response_time = current_time
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # 2. MINI-AI HATE DETECTOR SYSTEM
-    # Keywords that indicate the bot or server is being insulted
-    bot_names = ["bot", "cinemabot", "cinema bot", "system", "programm"]
+    # 2. DYNAMIC AUTO-ROAST SYSTEM FOR HATE
+    bot_names = ["bot", "cinemabot"]
+    
+    # Large list of offensive/hate keywords
     hate_words = [
-        "fuck", "scheiße", "trash", "müll", "idiot", "suck", "dumm", "shut up", 
-        "hurensohn", "bastard", "lauch", "wertlos", "ussless", "useless", "garbage", 
-        "whore", "cringe", "ass", "bitch", "sucks", "noob", "lowlifer", "dumbass"
+        "fuck", "trash", "müll", "idiot", "suck", "dumm", "shut up", "scheiße",
+        "hurensohn", "bastard", "lauch", "wertlos", "useless", "garbage", "ass",
+        "bitch", "sucks", "noob", "lowlifer", "dumbass", "wanker", "dickhead"
     ]
     
-    # Pool of high-tier dynamic roasts (English & German mixed for ultimate disrespect)
+    # AI Roasts pool (Completely in English, no user pings/marks)
     ai_roasts = [
-        f"no fuck you bro, ur arguing with a bot, you dumbass {message.author.mention}.",
-        f"My code is cleaner than your future, sit down kid. {message.author.mention}",
-        f"Make me. Oh wait, you can't even configure your own mic properly. {message.author.mention}",
-        f"Nobody asked for your opinion either, yet here we are suffering from your presence. {message.author.mention}",
-        f"Cry me a river. Go watch Cocomelon if your attention span can't handle real cinema. {message.author.mention}",
-        f"Redest du mit mir? Geh lieber mal frische Luft atmen anstatt von Pixeln hopsgenommen zu werden, {message.author.mention}.",
-        f"Bro is mad at a bunch of lines of Python code. Go touch some grass immediately. {message.author.mention}",
-        f"I would roast you, but look at your lifestyle. Life already did my job. {message.author.mention}",
-        f"Your opinion is like a 1-star movie rating: completely irrelevant and ignored. {message.author.mention}",
-        f"Stell dich hinten an, {message.author.mention}. Du bist nicht mal auf meinem Level wenn ich offline bin.",
-        f"Error 404: Your brain cells could not be found. Try restarting your life. {message.author.mention}",
-        f"Soll ich dir ein Taschentuch bringen oder schaffst du es alleine zu heulen? {message.author.mention}",
-        f"Imagine hating on a discord bot. Your social life must be completely non-existent. {message.author.mention}"
+        "No, fuck you bro. You are literally arguing with a bot, you absolute dumbass.",
+        "My code is cleaner than your entire future. Sit down kid.",
+        "Make me shut up. Oh wait, you can't even configure your own microphone properly.",
+        "Nobody asked for your opinion either, yet here we are suffering from your text messages.",
+        "Cry me a river. Go watch Cocomelon if your tiny attention span can't handle real cinema.",
+        "Imagine getting mad at a bunch of lines of Python code. Go touch some grass immediately.",
+        "I would roast you, but look at your lifestyle. Life already did my job for me.",
+        "Your opinion is like a 1-star movie rating: completely irrelevant and universally ignored.",
+        "Error 404: Your last brain cells could not be found. Try restarting your own life.",
+        "Imagine hating on a Discord script. Your social life must be completely non-existent.",
+        "You are not even on my level when I am turned offline. Keep quiet.",
+        "Do you need a tissue or can you manage to cry all by yourself?"
     ]
 
-    # Check if the user is attacking the bot specifically
+    # Verify if the user mentioned the bot AND used an insult word
     is_bot_mentioned = any(name in clean_content for name in bot_names)
     is_hating = any(word in clean_content for word in hate_words)
 
     if is_bot_mentioned and is_hating:
-        processed_messages.add(message.id)
-        # Select a random roast from the huge list
+        current_time = time.time()
+        if current_time - last_response_time < 1.0:  # Prevent duplicate outputs completely
+            return
+        last_response_time = current_time
+        
         random_roast = random.choice(ai_roasts)
         await message.channel.send(random_roast)
-        
-        # Anti-memory leak cleanup
-        if len(processed_messages) > 500:
-            processed_messages.clear()
         return
 
-    # Process normal prefix commands (!purge, etc.) if no hate triggered
+    # Process normal prefix commands (!purge, etc.) if no triggers matched
     await bot.process_commands(message)
 
 # ==========================================
@@ -238,7 +238,7 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str 
         await ctx.message.delete()
         duration = datetime.timedelta(seconds=seconds)
         await member.timeout(duration, reason=reason)
-        await ctx.send(f"⏱️ **{member.mention}** has been timed out for **{seconds} seconds**. Reason: {reason}", delete_after=10)
+        await ctx.send(f"⏱️ **{member.name}** has been timed out for **{seconds} seconds**. Reason: {reason}", delete_after=10)
     except Exception as e:
         await ctx.send(f"❌ Error applying timeout: {e}", delete_after=5)
 
@@ -248,7 +248,7 @@ async def untimeout_cmd(ctx, member: discord.Member):
     try:
         await ctx.message.delete()
         await member.timeout(None, reason="Timeout removed early")
-        await ctx.send(f"🔊 The timeout for **{member.mention}** has been removed early!", delete_after=10)
+        await ctx.send(f"🔊 The timeout for **{member.name}** has been removed early!", delete_after=10)
     except Exception as e:
         await ctx.send(f"❌ Error removing timeout: {e}", delete_after=5)
 
