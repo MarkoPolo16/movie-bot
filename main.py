@@ -25,12 +25,10 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Security Check ---
 def is_admin():
     async def predicate(ctx):
         if ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS:
             return True
-        await ctx.send("❌ Access denied.", delete_after=5)
         return False
     return commands.check(predicate)
 
@@ -43,35 +41,20 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# --- DB ---
-def init_db():
-    if not DATABASE_URL: return
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS ratings (user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id))")
-    conn.commit(); cur.close(); conn.close()
-init_db()
-
 # --- Views ---
 class RulesView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ I accept the rules", style=discord.ButtonStyle.success, custom_id="rules_btn")
+    @discord.ui.button(label="✅ Accept Rules & Get Cinephile", style=discord.ButtonStyle.success, custom_id="rules_btn")
     async def verify(self, i: discord.Interaction, b: discord.ui.Button):
         role = i.guild.get_role(CINEPHILE_ROLE_ID)
-        if role: 
-            await i.user.add_roles(role)
-            await i.response.send_message("✅ You are now a Cinephile!", ephemeral=True)
+        await i.user.add_roles(role)
+        await i.response.send_message("✅ You are now a Cinephile!", ephemeral=True)
 
-class GenreView(discord.ui.View):
+class GenreButtonView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.select(custom_id="genre_select", placeholder="Choose your genre", options=[
-        discord.SelectOption(label="Horror", value="1506300505226346608"),
-        discord.SelectOption(label="Action", value="1506300602773147749"),
-        discord.SelectOption(label="Sci-Fi", value="1506300638987030599"),
-        discord.SelectOption(label="Drama", value="1506300696142544926")
-    ])
-    async def select(self, i: discord.Interaction, select: discord.ui.Select):
-        role = i.guild.get_role(int(select.values[0]))
+    
+    async def toggle_role(self, i: discord.Interaction, role_id: int):
+        role = i.guild.get_role(role_id)
         if role in i.user.roles:
             await i.user.remove_roles(role)
             await i.response.send_message(f"Removed {role.name}", ephemeral=True)
@@ -79,51 +62,56 @@ class GenreView(discord.ui.View):
             await i.user.add_roles(role)
             await i.response.send_message(f"Added {role.name}!", ephemeral=True)
 
-# --- Commands ---
-@bot.command()
-async def setup_rules(ctx): 
-    embed = discord.Embed(title="📜 Server Rules", description="1. Be respectful.\n2. No hate speech.\n3. Keep it movie-related.\n\nClick below to get the Cinephile role.", color=CYAN)
-    await ctx.send(embed=embed, view=RulesView())
+    @discord.ui.button(label="Horror", style=discord.ButtonStyle.primary, custom_id="btn_horror")
+    async def horror(self, i, b): await self.toggle_role(i, 1506300505226346608)
+    @discord.ui.button(label="Action", style=discord.ButtonStyle.primary, custom_id="btn_action")
+    async def action(self, i, b): await self.toggle_role(i, 1506300602773147749)
+    @discord.ui.button(label="Sci-Fi", style=discord.ButtonStyle.primary, custom_id="btn_scifi")
+    async def scifi(self, i, b): await self.toggle_role(i, 1506300638987030599)
+    @discord.ui.button(label="Drama", style=discord.ButtonStyle.primary, custom_id="btn_drama")
+    async def drama(self, i, b): await self.toggle_role(i, 1506300696142544926)
 
-@bot.command()
-async def setup_roles(ctx): await ctx.send("🎭 **Select your favorite genres:**", view=GenreView())
-
-@bot.command()
-@is_admin()
-async def purge(ctx, amount: int): await ctx.channel.purge(limit=min(amount, 100) + 1)
-
-@bot.command()
-@is_admin()
-async def timeout(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
-    try:
-        await member.timeout(timedelta(seconds=seconds), reason=reason)
-        await ctx.send(f"⏱️ {member.name} has been timed out for {seconds}s.")
-    except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
-
-@bot.command()
-@is_admin()
-async def untimeout(ctx, member: discord.Member):
-    try:
-        await member.timeout(None, reason="Removed by admin")
-        await ctx.send(f"🔊 Timeout for {member.name} removed.")
-    except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
+# --- Autocomplete & Search ---
+async def movie_autocomplete(i: discord.Interaction, current: str):
+    if len(current) < 2: return []
+    res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
+    return [app_commands.Choice(name=f"{m['title']} ({m.get('release_date', 'N/A')[:4]})", value=m["title"]) for m in res.get("results", [])[:8]]
 
 @bot.tree.command(name="search")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(i: discord.Interaction, movie_name: str):
     await i.response.defer()
     res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
     if not res.get("results"): return await i.followup.send("❌ Not found.")
     m = res["results"][0]
-    await i.followup.send(embed=discord.Embed(title=m["title"], description=m.get("overview")[:200], color=CYAN))
+    embed = discord.Embed(title=f"🎬 {m['title']} ({m.get('release_date', 'N/A')[:4]})", description=m.get("overview")[:200], color=CYAN)
+    await i.followup.send(embed=embed)
+
+# --- Admin Commands ---
+@bot.command()
+@is_admin()
+async def setup_rules(ctx): await ctx.send("📜 **Accept the rules to join:**", view=RulesView())
+
+@bot.command()
+@is_admin()
+async def setup_roles(ctx): await ctx.send("🎭 **Select your genres:**", view=GenreButtonView())
+
+@bot.command()
+@is_admin()
+async def purge(ctx, amount: int): await ctx.channel.purge(limit=amount + 1)
+
+@bot.command()
+@is_admin()
+async def timeout(ctx, member: discord.Member, seconds: int):
+    await member.timeout(timedelta(seconds=seconds))
+    await ctx.send(f"⏱️ {member.name} timed out.")
 
 @bot.event
 async def on_ready():
     bot.add_view(RulesView())
-    bot.add_view(GenreView())
+    bot.add_view(GenreButtonView())
     await bot.tree.sync()
-    print("Bot is ready and secure.")
+    print("Bot is ready.")
 
 if __name__ == "__main__":
     keep_alive()
