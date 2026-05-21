@@ -120,15 +120,14 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No r
         await member.timeout(until, reason=reason)
 
         await ctx.send(
-            f"⏱️ {member.mention} timed out for **{seconds} seconds**"
+            f"⏱️ {member.mention} timed out for **{seconds} seconds** | Reason: {reason}"
         )
 
     except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions (role hierarchy / moderate members)")
+        await ctx.send("❌ Missing Permissions")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
-
 # ==========================================
 # 🔊 UNTIMEOUT
 # ==========================================
@@ -173,16 +172,49 @@ async def purge_cmd(ctx, amount: int):
 # ==========================================
 class VerifyView(discord.ui.View):
 
+    def __init__(self):
+        super().__init__(timeout=None)
+
     @discord.ui.button(label="✅ Verify", style=discord.ButtonStyle.success)
     async def verify(self, interaction, button):
 
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
 
+        # 🔥 FIX 1: Role exist check
+        if role is None:
+            await interaction.response.send_message(
+                "❌ Verify role not found (wrong ID)",
+                ephemeral=True
+            )
+            return
+
+        # 🔥 FIX 2: already has role
         if role in interaction.user.roles:
-            await interaction.response.send_message("Already verified.", ephemeral=True)
-        else:
+            await interaction.response.send_message(
+                "ℹ️ You are already verified.",
+                ephemeral=True
+            )
+            return
+
+        try:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message("Verified!", ephemeral=True)
+
+            await interaction.response.send_message(
+                "🎉 You are now verified!",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Bot has no permission to give roles (check role hierarchy)",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error: {e}",
+                ephemeral=True
+            )
 
 # ==========================================
 # 🎭 GENRE ROLES
