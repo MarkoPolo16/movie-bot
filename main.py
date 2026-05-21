@@ -109,7 +109,7 @@ class AcceptRulesView(discord.ui.View):
                 await member.add_roles(role)
                 await interaction.response.send_message(f"🎉 Danke! Du hast die Regeln akzeptiert und die Rolle **{role.name}** erhalten. Viel Spaß auf dem Server! 🍿", ephemeral=True)
             except discord.Forbidden:
-                await interaction.response.send_message("❌ Der Bot darf dir diese Rolle nicht geben. Bitte sag dem Server-Admin, er soll die Bot-Rolle in den Einstellungen ganz nach oben ziehen!", ephemeral=True)
+                await interaction.response.send_message("❌ Der Bot darf dir diese Rolle nicht geben. Bitte stell sicher, dass die Bot-Rolle (mit dem Roboter-Symbol) in den Server-Einstellungen ganz oben steht!", ephemeral=True)
 
 # ==========================================
 # DISCORD BOT EVENTS
@@ -132,6 +132,13 @@ async def on_member_join(member):
         )
         await channel.send(embed=embed)
 
+# DIESER TEIL WAR DER FEHLER: Erlaubt dem Bot wieder auf !-Befehle zu hören!
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    await bot.process_commands(message)
+
 # ==========================================
 # ADMIN PREFIX COMMANDS (PURGE & RULES SETUP)
 # ==========================================
@@ -150,8 +157,7 @@ async def purge(ctx, amount: int):
             messages.append(msg)
         await ctx.channel.delete_messages(messages)
     except Exception as e:
-        error_msg = await ctx.send(f"❌ Error: {e}")
-        await error_msg.delete(delay=5)
+        print(f"Purge Fehler: {e}")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
