@@ -314,6 +314,29 @@ async def search(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
+@bot.tree.command(name="topliste", description="Zeigt die Top 10 Bewerter")
+async def topliste(interaction: discord.Interaction):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, COUNT(*) as count FROM ratings GROUP BY user_id ORDER BY count DESC LIMIT 10")
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            return await interaction.response.send_message("Noch keine Bewertungen vorhanden.", ephemeral=True)
+        
+        embed = discord.Embed(title="🏆 Top 10 Bewerter", color=CYAN)
+        for idx, (uid, count) in enumerate(results, 1):
+            member = interaction.guild.get_member(int(uid))
+            name = member.display_name if member else f"User {uid}"
+            embed.add_field(name=f"{idx}. {name}", value=f"{count} Filme bewertet", inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
 if __name__ == "__main__":
     keep_alive()
     if TOKEN: bot.run(TOKEN)
