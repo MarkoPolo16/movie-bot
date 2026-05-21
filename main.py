@@ -290,11 +290,11 @@ class RatingView(discord.ui.View):
 @app_commands.describe(movie_name="Name of the movie")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
-    await interaction.response.defer()
-    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.")
+    await interaction.response.defer(ephemeral=True)
+    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.", ephemeral=True)
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
-        if not data.get("results"): return await interaction.followup.send("No movies found.")
+        if not data.get("results"): return await interaction.followup.send("No movies found.", ephemeral=True)
         movie = data["results"][0]
         
         conn = psycopg2.connect(DATABASE_URL)
@@ -311,8 +311,8 @@ async def search(interaction: discord.Interaction, movie_name: str):
         embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
-        await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
-    except Exception as e: await interaction.followup.send(f"Error: {e}")
+        await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
+    except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 if __name__ == "__main__":
     keep_alive()
