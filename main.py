@@ -18,6 +18,15 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 WELCOME_CHANNEL_ID = 1506237698304774215
+ROLES_CHANNEL_ID = 1506237765526880287
+
+# Mapping von Button-Labels zu den exakten Rollennamen aus deinem Screenshot
+GENRE_ROLES = {
+    "👻 Horror Fan": "👻 Horror Fan",
+    "💥 Action Fan": "💥 Action Fan",
+    "🚀 Sci-Fi Fan": "🚀 Sci-Fi Fan",
+    "🎭 Drama Fan": "🎭 Drama Fan"
+}
 
 # ==========================================
 # WEBSERVER FÜR RENDER (Hält Bot online)
@@ -29,7 +38,6 @@ def home():
     return "CinemaBot DB-Edition is perfectly online!"
 
 def run_web():
-    # Render verlangt zwingend, dass wir den Port dynamisch auslesen
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
@@ -77,14 +85,51 @@ def init_db():
     except Exception as e:
         print(f"❌ DATABASE ERROR during initialization: {e}")
 
-# Tabelle beim Skriptstart automatisch prüfen/erstellen
 init_db()
+
+# ==========================================
+# INTERAKTIVE BUTTONS FÜR ROLLEN-AUSWAHL
+# ==========================================
+class RoleButton(discord.ui.Button):
+    def __init__(self, label: str):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"role_{label}")
+
+    async def callback(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        role_name = GENRE_ROLES.get(self.label)
+        
+        if not guild or not role_name:
+            await interaction.response.send_message("❌ Server context or role configuration error.", ephemeral=True)
+            return
+
+        # Rolle auf dem Server anhand des Namens suchen
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            await interaction.response.send_message(f"❌ Role `{role_name}` not found on this server. Please contact an Admin.", ephemeral=True)
+            return
+
+        member = interaction.user
+        # Wenn der User die Rolle schon hat -> entfernen. Wenn nicht -> hinzufügen.
+        if role in member.roles:
+            await member.remove_roles(role)
+            await interaction.response.send_message(f"🎭 Removed the role **{role_name}** from you.", ephemeral=True)
+        else:
+            await member.add_roles(role)
+            await interaction.response.send_message(f"🎉 Granted you the role **{role_name}**!", ephemeral=True)
+
+class RoleToggleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None) # timeout=None sorgt dafür, dass die Buttons ewig aktiv bleiben
+        for label in GENRE_ROLES.keys():
+            self.add_item(RoleButton(label))
 
 # ==========================================
 # DISCORD BOT EVENTS
 # ==========================================
 @bot.event
 async def on_ready():
+    # Persistent Views müssen beim Start registriert werden, damit sie nach Bot-Restarts weiter funktionieren
+    bot.add_view(RoleToggleView())
     await bot.tree.sync()
     print(f"🎬 {bot.user} is online and fully synced with Discord!")
 
@@ -105,7 +150,7 @@ async def on_member_join(member):
         await channel.send(embed=embed)
 
 # ==========================================
-# ADMIN PREFIX COMMAND (PURGE)
+# ADMIN PREFIX COMMANDS (PURGE & SETUP ROLES)
 # ==========================================
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -124,6 +169,32 @@ async def purge(ctx, amount: int):
     except Exception as e:
         error_msg = await ctx.send(f"❌ Error: {e}")
         await error_msg.delete(delay=5)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """Erstellt das dauerhafte Rollenmenü im konfigurierten Kanal"""
+    # Sicherstellen, dass der Befehl im richtigen Kanal ausgeführt wird
+    if ctx.channel.id != ROLES_CHANNEL_ID:
+        await ctx.send(f"❌ This command can only be used in the roles channel (<#{ROLES_CHANNEL_ID}>)!", delete_after=5)
+        await ctx.message.delete(delay=5)
+        return
+
+    await ctx.message.delete()
+
+    embed = discord.Embed(
+        title="🎭 Choose your Movie Genres!",
+        description=(
+            "Click the buttons below to select the genres you are interested in.\n"
+            "This helps other members know what kind of movies you like, and lets us ping you for specific events!🍿\n\n"
+            "*Click a button again to remove the role.*"
+        ),
+        color=discord.Color.from_rgb(0, 255, 255)
+    )
+    embed.set_footer(text="Cinema Server Roles Customization")
+    
+    view = RoleToggleView()
+    await ctx.send(embed=embed, view=view)
 
 # ==========================================
 # MOVIE AUTOCOMPLETE FOR SLASH COMMAND
@@ -253,7 +324,6 @@ async def search(interaction: discord.Interaction, movie_name: str):
     overview = movie["overview"]
     poster = movie.get("poster_path")
 
-    # DB SICHERHEITSNETZ
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
