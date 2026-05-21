@@ -264,11 +264,12 @@ class RatingView(discord.ui.View):
             ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             conn.commit()
-            cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (self.movie_id,))
-            avg = round(cursor.fetchone()[0] or 0.0, 1)
+            cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            avg, count = cursor.fetchone()
+            avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
-            await interaction.response.send_message(f"✅ Rated {rating} stars! Average: {avg}/5", ephemeral=True)
+            await interaction.response.send_message(f"✅ Rated {rating} stars! Average: {avg}/5 ({count} ratings)", ephemeral=True)
         except Exception as e: print(e)
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
@@ -310,8 +311,9 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
-        avg = round(cursor.fetchone()[0] or 0.0, 1)
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        avg, count = cursor.fetchone()
+        avg = round(avg or 0.0, 1)
         cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie["id"], str(interaction.user.id)))
         user_rating = cursor.fetchone()
         cursor.close()
@@ -319,7 +321,7 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
         embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
-        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
+        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5 ({count} ratings)")
         embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
@@ -343,14 +345,15 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
-        avg = round(cursor.fetchone()[0] or 0.0, 1)
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        avg, count = cursor.fetchone()
+        avg = round(avg or 0.0, 1)
         cursor.close()
         conn.close()
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
         embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
-        embed.add_field(name="⭐ Server Average", value=f"{avg}/5")
+        embed.add_field(name="⭐ Server Average", value=f"{avg}/5 ({count} ratings)")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed)
