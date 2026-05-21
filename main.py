@@ -154,15 +154,24 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_message(message):
-    # Ignore messages sent by the bot itself to prevent infinite loops
+    # Ignore messages sent by the bot itself
     if message.author.bot:
         return
 
-    # Check if the message content is exactly "cat me" (case-insensitive)
-    if message.content.strip().lower() == "cat me":
-        await message.channel.send("Im not gonna meow bro")
+    # Clean the message content (remove spaces at start/end and turn lowercase)
+    clean_content = message.content.strip().lower()
 
-    # CRITICAL: This allows prefix commands like !purge to still work!
+    # Trigger ONLY for exact "cat me"
+    if clean_content == "cat me":
+        await message.channel.send("Im not gonna meow bro")
+        return
+
+    # Trigger for "fuck you cinemabot"
+    if clean_content == "fuck you cinemabot":
+        await message.channel.send("no fuck you bro, ur arguing with a bot, you dumbass")
+        return
+
+    # Process normal prefix commands (!purge, etc.)
     await bot.process_commands(message)
 
 # ==========================================
