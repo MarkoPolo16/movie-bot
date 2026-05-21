@@ -2,6 +2,7 @@ import os
 import discord
 import requests
 import psycopg2
+from datetime import timedelta
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -29,7 +30,7 @@ def is_admin():
     async def predicate(ctx):
         if ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS:
             return True
-        await ctx.send("❌ You don't have permission to use this command.", delete_after=5)
+        await ctx.send("❌ Access denied.", delete_after=5)
         return False
     return commands.check(predicate)
 
@@ -94,14 +95,20 @@ async def purge(ctx, amount: int): await ctx.channel.purge(limit=min(amount, 100
 @bot.command()
 @is_admin()
 async def timeout(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
-    await member.timeout(discord.utils.utcnow() + discord.timedelta(seconds=seconds), reason=reason)
-    await ctx.send(f"⏱️ {member.name} has been timed out.")
+    try:
+        await member.timeout(timedelta(seconds=seconds), reason=reason)
+        await ctx.send(f"⏱️ {member.name} has been timed out for {seconds}s.")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
 
 @bot.command()
 @is_admin()
 async def untimeout(ctx, member: discord.Member):
-    await member.timeout(None)
-    await ctx.send(f"🔊 Timeout for {member.name} removed.")
+    try:
+        await member.timeout(None, reason="Removed by admin")
+        await ctx.send(f"🔊 Timeout for {member.name} removed.")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
 
 @bot.tree.command(name="search")
 async def search(i: discord.Interaction, movie_name: str):
