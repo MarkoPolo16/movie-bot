@@ -50,25 +50,58 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Global cooldown lock to completely crush double-responses from Render
-GLOBAL_RESPONSE_COOLDOWN = 2.0
-last_global_response_time = 0.0
-
 def init_db():
     if not DATABASE_URL: return
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+        # Setup ratings table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS ratings (
             user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id)
         )""")
+        # Setup cross-server global lock table to completely kill duplicate messages
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bot_lock (
+            lock_key TEXT PRIMARY KEY, last_used REAL
+        )""")
+        cursor.execute("INSERT INTO bot_lock (lock_key, last_used) VALUES ('global_cooldown', 0.0) ON CONFLICT DO NOTHING")
         conn.commit()
         cursor.close()
         conn.close()
     except Exception as e: print(f"DB Error: {e}")
 
 init_db()
+
+# Database check to stop double triggers across ghost servers completely
+def try_acquire_response_lock():
+    if not DATABASE_URL: return True # Fallback if DB missing
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        current_time = time.time()
+        
+        # Pull the absolute timestamp across all containers
+        cursor.execute("SELECT last_used FROM bot_lock WHERE lock_key = 'global_cooldown' FOR UPDATE")
+        row = cursor.fetchone()
+        
+        if row:
+            last_used = row[0]
+            # 2.5 second absolute cross-server cooldown lock
+            if current_time - last_used < 2.5:
+                cursor.close()
+                conn.close()
+                return False
+        
+        # Update lock timestamp instantly inside the database transaction
+        cursor.execute("UPDATE bot_lock SET last_used = %s WHERE lock_key = 'global_cooldown'", (current_time,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Lock Error: {e}")
+        return True
 
 # ==========================================
 # PERMISSION CHECKS (SECURITY WALLS)
@@ -157,8 +190,6 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_message(message):
-    global last_global_response_time
-    
     # Ignore bot messages entirely
     if message.author.bot:
         return
@@ -168,18 +199,13 @@ async def on_message(message):
 
     # 1. FIXED TRIGGER ("cat me")
     if "cat me" in clean_content:
-        current_time = time.time()
-        if current_time - last_global_response_time < GLOBAL_RESPONSE_COOLDOWN:
+        if not try_acquire_response_lock():
             return
-        last_global_response_time = current_time
-        
         await message.channel.send("Im not gonna meow bro")
         return
 
     # 2. BOT INSULT DETECTION ENGINE (Pure English, Zero Mentions allowed)
     bot_names = ["bot", "cinemabot"]
-    
-    # Fully English bad words / insult triggers
     hate_words = [
         "fuck", "trash", "idiot", "suck", "sucks", "shut up", "bastard", 
         "useless", "garbage", "ass", "bitch", "noob", "lowlifer", "dumbass", 
@@ -205,10 +231,8 @@ async def on_message(message):
     is_hating = any(word in clean_content for word in hate_words)
 
     if is_bot_mentioned and is_hating:
-        current_time = time.time()
-        if current_time - last_global_response_time < GLOBAL_RESPONSE_COOLDOWN:
+        if not try_acquire_response_lock():
             return
-        last_global_response_time = current_time
         
         random_roast = random.choice(ai_roasts)
         await message.channel.send(random_roast)
