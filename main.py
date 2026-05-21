@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging, datetime, random, time
+import os, discord, requests, psycopg2, logging, datetime, time
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -55,12 +55,10 @@ def init_db():
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        # Setup ratings table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS ratings (
             user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id)
         )""")
-        # Setup cross-server global lock table to completely kill duplicate messages
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS bot_lock (
             lock_key TEXT PRIMARY KEY, last_used REAL
@@ -73,27 +71,23 @@ def init_db():
 
 init_db()
 
-# Database check to stop double triggers across ghost servers completely
 def try_acquire_response_lock():
-    if not DATABASE_URL: return True # Fallback if DB missing
+    if not DATABASE_URL: return True
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         current_time = time.time()
         
-        # Pull the absolute timestamp across all containers
         cursor.execute("SELECT last_used FROM bot_lock WHERE lock_key = 'global_cooldown' FOR UPDATE")
         row = cursor.fetchone()
         
         if row:
             last_used = row[0]
-            # 2.5 second absolute cross-server cooldown lock
             if current_time - last_used < 2.5:
                 cursor.close()
                 conn.close()
                 return False
         
-        # Update lock timestamp instantly inside the database transaction
         cursor.execute("UPDATE bot_lock SET last_used = %s WHERE lock_key = 'global_cooldown'", (current_time,))
         conn.commit()
         cursor.close()
@@ -190,55 +184,25 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_message(message):
-    # Ignore bot messages entirely
     if message.author.bot:
         return
 
-    # Standardize string for filtering
     clean_content = message.content.lower()
 
-    # 1. FIXED TRIGGER ("cat me")
+    # 1. TRIGGER: "cat me" (irgendwo im Satz)
     if "cat me" in clean_content:
         if not try_acquire_response_lock():
             return
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # 2. BOT INSULT DETECTION ENGINE (Pure English, Zero Mentions allowed)
-    bot_names = ["bot", "cinemabot"]
-    hate_words = [
-        "fuck", "trash", "idiot", "suck", "sucks", "shut up", "bastard", 
-        "useless", "garbage", "ass", "bitch", "noob", "lowlifer", "dumbass", 
-        "wanker", "dickhead", "crap", "horrible", "terrible", "worst", "clown"
-    ]
-    
-    ai_roasts = [
-        "No, fuck you bro. You are literally arguing with a bot, you absolute dumbass.",
-        "My code is cleaner than your entire future. Sit down kid.",
-        "Make me shut up. Oh wait, you can't even configure your own microphone properly.",
-        "Nobody asked for your opinion either, yet here we are suffering from your text messages.",
-        "Cry me a river. Go watch Cocomelon if your tiny attention span can't handle real cinema.",
-        "Imagine getting mad at a bunch of lines of Python code. Go touch some grass immediately.",
-        "I would roast you, but look at your lifestyle. Life already did my job for me.",
-        "Your opinion is like a 1-star movie rating: completely irrelevant and universally ignored.",
-        "Error 404: Your last brain cells could not be found. Try restarting your own life.",
-        "Imagine hating on a Discord script. Your social life must be completely non-existent.",
-        "You are not even on my level when I am turned offline. Keep quiet.",
-        "Do you need a tissue or can you manage to cry all by yourself?"
-    ]
-
-    is_bot_mentioned = any(name in clean_content for name in bot_names)
-    is_hating = any(word in clean_content for word in hate_words)
-
-    if is_bot_mentioned and is_hating:
+    # 2. TRIGGER: "fuck you cinemabot" (irgendwo im Satz)
+    if "fuck you cinemabot" in clean_content:
         if not try_acquire_response_lock():
             return
-        
-        random_roast = random.choice(ai_roasts)
-        await message.channel.send(random_roast)
+        await message.channel.send("no fuck you bro, ur arguing with a bot, you dumbass")
         return
 
-    # Process regular prefix commands (!purge etc.)
     await bot.process_commands(message)
 
 # ==========================================
