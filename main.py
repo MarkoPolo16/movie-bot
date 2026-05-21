@@ -349,13 +349,13 @@ async def topliste(interaction: discord.Interaction):
         conn.close()
         
         if not results:
-            return await interaction.response.send_message("Noch keine Bewertungen vorhanden.")
+            return await interaction.response.send_message("No reviews yet.")
         
-        embed = discord.Embed(title="🏆 Top 10 Bewerter", color=CYAN)
+        embed = discord.Embed(title="🏆 Top 10 reviewers", color=CYAN)
         for idx, (uid, count) in enumerate(results, 1):
             member = interaction.guild.get_member(int(uid))
             name = member.display_name if member else f"User {uid}"
-            embed.add_field(name=f"{idx}. {name}", value=f"{count} Filme bewertet", inline=False)
+            embed.add_field(name=f"{idx}. {name}", value=f"{count} movies rated", inline=False)
         
         await interaction.response.send_message(embed=embed)
     except Exception as e:
