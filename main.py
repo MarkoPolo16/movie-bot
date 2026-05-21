@@ -105,7 +105,7 @@ async def on_member_join(member):
         )
 
 # ==========================================
-# ⏱️ TIMEOUT (SECONDS FIXED)
+# ⏱️ TIMEOUT
 # ==========================================
 @bot.command(name="timeout")
 @is_admin_or_owner()
@@ -145,6 +145,7 @@ async def purge_cmd(ctx, amount: int):
     try:
         amount = max(1, min(amount, 100))
         await ctx.channel.purge(limit=amount + 1)
+
         msg = await ctx.send(f"🧹 Deleted {amount} messages")
         await msg.delete(delay=3)
 
@@ -155,7 +156,7 @@ async def purge_cmd(ctx, amount: int):
         await ctx.send(f"❌ Error: {e}")
 
 # ==========================================
-# 📜 RULES + VERIFY (FIXED FULL SYSTEM)
+# 📜 VERIFY SYSTEM (FIXED)
 # ==========================================
 class VerifyView(discord.ui.View):
 
@@ -177,11 +178,11 @@ class VerifyView(discord.ui.View):
 
         try:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message("🎉 Verified! You now have access.", ephemeral=True)
+            await interaction.response.send_message("🎉 Verified! You got access.", ephemeral=True)
 
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ Bot missing permissions / role hierarchy issue",
+                "❌ Missing permissions / role hierarchy issue",
                 ephemeral=True
             )
 
@@ -214,7 +215,7 @@ class RoleView(discord.ui.View):
             await interaction.response.send_message("Role added", ephemeral=True)
 
 # ==========================================
-# ⭐ RATING
+# ⭐ RATING SYSTEM
 # ==========================================
 class RatingView(discord.ui.View):
 
@@ -293,12 +294,16 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
 # ==========================================
-# START
+# READY EVENT (IMPORTANT FIX)
+# ==========================================
+@bot.event
+async def on_ready():
+    bot.add_view(VerifyView())
+    print(f"Logged in as {bot.user}")
+
+# ==========================================
+# START BOT
 # ==========================================
 if __name__ == "__main__":
     keep_alive()
-
-    # IMPORTANT: persistent view for rules button
-    bot.add_view(VerifyView())
-
     bot.run(TOKEN)
