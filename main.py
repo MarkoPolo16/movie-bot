@@ -317,7 +317,8 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         cursor.close()
         conn.close()
 
-        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=CYAN)
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
+        embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
         embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
         embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
@@ -347,7 +348,8 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         cursor.close()
         conn.close()
 
-        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=CYAN)
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
+        embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
         embed.add_field(name="⭐ Server Average", value=f"{avg}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
