@@ -22,7 +22,7 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 # Die feste ID für deine Cinephile-Rolle
 VERIFY_ROLE_ID = 1506242963318243379  
 
-# ERLAUBTE ADMIN-ID LISTE (Nur diese User dürfen Admin-Befehle nutzen)
+# ERLAUBTE ADMIN-ID LISTE (Zusätzliche Absicherung für IDs)
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 # Rollen-Namen für das Genre-Menü
@@ -91,6 +91,22 @@ def init_db():
         print(f"❌ DATABASE ERROR during initialization: {e}")
 
 init_db()
+
+# ==========================================
+# HELFER-FUNKTION: BERECHTIGUNGSPRÜFUNG
+# ==========================================
+def is_authorized_admin(ctx):
+    """
+    Gibt True zurück, wenn der User entweder die Server-Rechte hat
+    ODER seine ID in der erlaubten Liste steht ODER er der Server-Owner ist.
+    """
+    if ctx.author.id == ctx.guild.owner_id:
+        return True
+    if ctx.author.guild_permissions.administrator:
+        return True
+    if ctx.author.id in ALLOWED_ADMIN_IDS:
+        return True
+    return False
 
 # ==========================================
 # INTERAKTIVE BUTTONS FÜR REGEL-BESTÄTIGUNG
@@ -185,17 +201,16 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================================
-# SPERRE FÜR ADMIN PREFIX COMMANDS (ID CHECK)
+# SPERRE FÜR ADMIN PREFIX COMMANDS
 # ==========================================
 @bot.command()
 async def purge(ctx, amount: int):
-    # 1. ERST PRÜFEN: Ist der User berechtigt?
-    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+    # Greift auf die neue, schlaue Helferfunktion zu
+    if not is_authorized_admin(ctx):
         await ctx.message.delete()
         await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return  # HIER WIRD SOFORT ABGEBROCHEN! Nichts wird gelöscht.
+        return
 
-    # 2. ERST WENN DIE ID STIMMT, WIRD GELÖSCHT
     if amount > 100:
         amount = 100
     if amount < 1:
@@ -213,7 +228,7 @@ async def purge(ctx, amount: int):
 @bot.command()
 async def setup_rules(ctx):
     """Erstellt das Regel-Embed mit dem Verifizierungs-Button"""
-    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+    if not is_authorized_admin(ctx):
         await ctx.message.delete()
         await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         return
@@ -240,7 +255,7 @@ async def setup_rules(ctx):
 @bot.command()
 async def setup_roles(ctx):
     """Erstellt das Genre-Rollen-Embed mit Auswahltasten"""
-    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+    if not is_authorized_admin(ctx):
         await ctx.message.delete()
         await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         return
