@@ -11,12 +11,12 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# SEKTION: CONFIG & IDS (HIER ANPASSEN!)
+# SECTION: CONFIG & IDS (ADJUST HERE!)
 # ==========================================
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379  
 
-# Liste der erlaubten Admin-IDs (Zusätzlich zum Server-Owner)
+# List of allowed Admin IDs (In addition to the Server Owner)
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 GENRE_ROLES = {
@@ -27,7 +27,7 @@ GENRE_ROLES = {
 }
 
 # ==========================================
-# WEBSERVER (HÄLT BOT ONLINE)
+# WEBSERVER (KEEPS BOT ONLINE)
 # ==========================================
 app = Flask('')
 @app.route('/')
@@ -68,7 +68,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# RECHTE-CHECKS (SICHERHEITS-MAUERN)
+# PERMISSION CHECKS (SECURITY WALLS)
 # ==========================================
 def is_owner():
     async def predicate(ctx):
@@ -85,37 +85,37 @@ def is_admin_or_owner():
     return commands.check(predicate)
 
 # ==========================================
-# BUTTON MENÜS (REGELN & GENRES)
+# BUTTON MENUS (RULES & GENRES)
 # ==========================================
 class AcceptRulesView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="accept_rules_btn")
     async def accept_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
-        if not role: return await interaction.response.send_message("❌ Rolle nicht gefunden!", ephemeral=True)
+        if not role: return await interaction.response.send_message("❌ Role not found!", ephemeral=True)
         if role in interaction.user.roles:
-            await interaction.response.send_message("ℹ️ Du hast die Rolle schon!", ephemeral=True)
+            await interaction.response.send_message("ℹ️ You already have this role!", ephemeral=True)
         else:
             try:
                 await interaction.user.add_roles(role)
-                await interaction.response.send_message(f"🎉 Rolle **{role.name}** zugewiesen! 🍿", ephemeral=True)
+                await interaction.response.send_message(f"🎉 Role **{role.name}** assigned! 🍿", ephemeral=True)
             except:
-                await interaction.response.send_message("❌ Bot-Rolle in den Server-Einstellungen weiter nach oben ziehen!", ephemeral=True)
+                await interaction.response.send_message("❌ Move the Bot role higher up in the server settings!", ephemeral=True)
 
 class RoleButton(discord.ui.Button):
     def __init__(self, label: str): super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"role_{label}")
     async def callback(self, interaction: discord.Interaction):
         role_name = GENRE_ROLES.get(self.label)
         role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if not role: return await interaction.response.send_message("❌ Rolle fehlt auf Server.", ephemeral=True)
+        if not role: return await interaction.response.send_message("❌ Role is missing on this server.", ephemeral=True)
         try:
             if role in interaction.user.roles:
                 await interaction.user.remove_roles(role)
-                await interaction.response.send_message(f"🎭 Rolle **{role_name}** entfernt.", ephemeral=True)
+                await interaction.response.send_message(f"🎭 Role **{role_name}** removed.", ephemeral=True)
             else:
                 await interaction.user.add_roles(role)
-                await interaction.response.send_message(f"🎉 Rolle **{role_name}** gegeben!", ephemeral=True)
-        except: await interaction.response.send_message("❌ Bot-Rechte fehlen.", ephemeral=True)
+                await interaction.response.send_message(f"🎉 Role **{role_name}** granted!", ephemeral=True)
+        except: await interaction.response.send_message("❌ Bot is missing permissions.", ephemeral=True)
 
 class RoleToggleView(discord.ui.View):
     def __init__(self):
@@ -123,14 +123,14 @@ class RoleToggleView(discord.ui.View):
         for label in GENRE_ROLES.keys(): self.add_item(RoleButton(label))
 
 # ==========================================
-# EVENTS & GLOBALER COMMAND-ERRORS HÄNDLER
+# EVENTS & GLOBAL COMMAND ERROR HANDLER
 # ==========================================
 @bot.event
 async def on_ready():
     bot.add_view(AcceptRulesView())
     bot.add_view(RoleToggleView())
     await bot.tree.sync()
-    print(f"🎬 {bot.user} ist bereit!")
+    print(f"🎬 {bot.user} is ready!")
 
 @bot.event
 async def on_member_join(member):
@@ -145,15 +145,15 @@ async def on_command_error(ctx, error):
         try: await ctx.message.delete()
         except: pass
         
-        msg = "❌ Du hast keine Berechtigung, diesen Befehl auszuführen!"
+        msg = "you do not have permission to execute this command!"
         if str(error) == "ONLY_OWNER":
-            msg = "❌ Dieser Befehl ist strikt dem Server-Owner vorbehalten!"
+            msg = "this command is strictly restricted to the Server Owner!"
             
-        await ctx.send(f"{ctx.author.mention}, {msg}", delete_after=5)
+        await ctx.send(f"{ctx.author.mention}, ❌ {msg}", delete_after=5)
         return
 
 # ==========================================
-# SEKTION: ADMIN & OWNER COMMANDS (Moderation)
+# SECTION: ADMIN & OWNER COMMANDS (Moderation)
 # ==========================================
 @bot.command(name="purge")
 @is_admin_or_owner()
@@ -163,54 +163,52 @@ async def purge_cmd(ctx, amount: int):
     try:
         await ctx.message.delete()
         await ctx.channel.purge(limit=amount)
-    except Exception as e: print(f"Purge Fehler: {e}")
+    except Exception as e: print(f"Purge Error: {e}")
 
 @bot.command(name="timeout")
 @is_admin_or_owner()
-async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str = "Kein Grund angegeben"):
+async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str = "No reason provided"):
     try:
         await ctx.message.delete()
         duration = datetime.timedelta(seconds=seconds)
         await member.timeout(duration, reason=reason)
-        await ctx.send(f"⏱️ **{member.mention}** wurde für **{seconds} Sekunden** stummgeschaltet. Grund: {reason}", delete_after=10)
+        await ctx.send(f"⏱️ **{member.mention}** has been timed out for **{seconds} seconds**. Reason: {reason}", delete_after=10)
     except Exception as e:
-        await ctx.send(f"❌ Fehler beim Timeout: {e}", delete_after=5)
+        await ctx.send(f"❌ Error applying timeout: {e}", delete_after=5)
 
 @bot.command(name="untimeout")
 @is_admin_or_owner()
 async def untimeout_cmd(ctx, member: discord.Member):
     try:
         await ctx.message.delete()
-        # Ein Timeout von None oder 0 Sekunden hebt die Stummschaltung sofort auf
-        await member.timeout(None, reason="Timeout vorzeitig aufgehoben")
-        await ctx.send(f"🔊 Das Timeout für **{member.mention}** wurde vorzeitig aufgehoben!", delete_after=10)
+        await member.timeout(None, reason="Timeout removed early")
+        await ctx.send(f"🔊 The timeout for **{member.mention}** has been removed early!", delete_after=10)
     except Exception as e:
-        await ctx.send(f"❌ Fehler beim Aufheben des Timeouts: {e}", delete_after=5)
+        await ctx.send(f"❌ Error removing timeout: {e}", delete_after=5)
 
 @bot.command(name="ban")
 @is_admin_or_owner()
-async def ban_cmd(ctx, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+async def ban_cmd(ctx, member: discord.Member, *, reason: str = "No reason provided"):
     try:
         await ctx.message.delete()
         await member.ban(reason=reason)
-        await ctx.send(f"🔨 **{member.name}** wurde dauerhaft vom Server gebannt. Grund: {reason}", delete_after=10)
+        await ctx.send(f"🔨 **{member.name}** was permanently banned from the server. Reason: {reason}", delete_after=10)
     except Exception as e:
-        await ctx.send(f"❌ Fehler beim Ban: {e}", delete_after=5)
+        await ctx.send(f"❌ Error banning member: {e}", delete_after=5)
 
 @bot.command(name="unban")
 @is_admin_or_owner()
 async def unban_cmd(ctx, user_id: str):
     try:
         await ctx.message.delete()
-        # Verwandelt den Text-String der ID in ein echtes Discord-User-Objekt
         user = await bot.fetch_user(int(user_id))
         await ctx.guild.unban(user)
-        await ctx.send(f"🕊️ **{user.name}** wurde erfolgreich entbannt und darf den Server wieder betreten!", delete_after=10)
+        await ctx.send(f"🕊️ **{user.name}** has been successfully unbanned and can rejoin the server!", delete_after=10)
     except Exception as e:
-        await ctx.send(f"❌ Fehler beim Entbannen (ID korrekt?): {e}", delete_after=5)
+        await ctx.send(f"❌ Error unbanning (Is the ID correct?): {e}", delete_after=5)
 
 # ==========================================
-# SEKTION: STRIKTE OWNER COMMANDS (Setups)
+# SECTION: STRICT OWNER COMMANDS (Setups)
 # ==========================================
 @bot.command(name="setup_rules")
 @is_owner()
@@ -219,7 +217,7 @@ async def setup_rules_cmd(ctx):
     except: pass
     embed = discord.Embed(
         title="📜 Server Rules & Verification",
-        description="1️⃣ Be respectful.\n2️⃣ No spoilers.\n3️⃣ Stay on topic.\n\nKlicke unten zum Verifizieren!",
+        description="1️⃣ Be respectful.\n2️⃣ No spoilers.\n3️⃣ Stay on topic.\n\nClick below to verify!",
         color=discord.Color.green()
     )
     await ctx.send(embed=embed, view=AcceptRulesView())
@@ -229,11 +227,11 @@ async def setup_rules_cmd(ctx):
 async def setup_roles_cmd(ctx):
     try: await ctx.message.delete()
     except: pass
-    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Wähle deine Genres aus:", color=discord.Color.cyan())
+    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Select your preferred genres below:", color=discord.Color.cyan())
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
-# FILMSUCHE & BEWERTUNGEN (SLASH-COMMAND)
+# MOVIE SEARCH & RATINGS (SLASH-COMMAND)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
@@ -262,9 +260,9 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
 
-            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Bewertung gespeichert!", color=discord.Color.cyan())
-            embed.add_field(name="⭐ Durchschnitt", value=f"{avg}/5")
-            embed.add_field(name="👤 Deine Note", value=f"{rating}/5")
+            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Rating saved successfully!", color=discord.Color.cyan())
+            embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
+            embed.add_field(name="👤 Your Rating", value=f"{rating}/5")
             await interaction.response.edit_message(embed=embed, view=None)
         except Exception as e: print(e)
 
@@ -279,15 +277,15 @@ class RatingView(discord.ui.View):
     @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
     async def b5(self, interaction, button): await self.handle_rating(interaction, 5.0)
 
-@bot.tree.command(name="search", description="Sucht und bewertet Filme")
-@app_commands.describe(movie_name="Filmname")
+@bot.tree.command(name="search", description="Search and rate movies")
+@app_commands.describe(movie_name="Name of the movie")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
-    if not TMDB_API_KEY: return await interaction.followup.send("API Key fehlt.")
+    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.")
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
-        if not data.get("results"): return await interaction.followup.send("Nichts gefunden.")
+        if not data.get("results"): return await interaction.followup.send("No movies found.")
         movie = data["results"][0]
         
         conn = psycopg2.connect(DATABASE_URL)
@@ -300,12 +298,12 @@ async def search(interaction: discord.Interaction, movie_name: str):
         conn.close()
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.cyan())
-        embed.add_field(name="⭐ Durchschnitt", value=f"{avg}/5")
-        embed.add_field(name="👤 Deine Note", value=f"{user_rating[0] if user_rating else 'Keine'}/5")
+        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
+        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
-    except Exception as e: await interaction.followup.send(f"Fehler: {e}")
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 if __name__ == "__main__":
     keep_alive()
