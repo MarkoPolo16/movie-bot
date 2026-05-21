@@ -16,7 +16,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379  
 
-# List of allowed Admin IDs (In addition to the Server Owner)
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 GENRE_ROLES = {
@@ -246,7 +245,7 @@ class RatingView(discord.ui.View):
         self.movie_id = movie_id
         self.movie_title = movie_title
 
-    async def handle_rating(self, interaction, rating):
+    async def save_rating(self, interaction: discord.Interaction, rating: float):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
@@ -259,23 +258,29 @@ class RatingView(discord.ui.View):
             avg = round(cursor.fetchone()[0] or 0.0, 1)
             cursor.close()
             conn.close()
-
-            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Rating saved successfully!", color=discord.Color.cyan())
-            embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
-            embed.add_field(name="👤 Your Rating", value=f"{rating}/5")
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.send_message(f"✅ Rated {rating} stars! Average: {avg}/5", ephemeral=True)
         except Exception as e: print(e)
 
-    @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
-    async def b1(self, interaction, button): await self.handle_rating(interaction, 1.0)
-    @discord.ui.button(label="2⭐", style=discord.ButtonStyle.secondary)
-    async def b2(self, interaction, button): await self.handle_rating(interaction, 2.0)
-    @discord.ui.button(label="3⭐", style=discord.ButtonStyle.primary)
-    async def b3(self, interaction, button): await self.handle_rating(interaction, 3.0)
-    @discord.ui.button(label="4⭐", style=discord.ButtonStyle.success)
-    async def b4(self, interaction, button): await self.handle_rating(interaction, 4.0)
-    @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
-    async def b5(self, interaction, button): await self.handle_rating(interaction, 5.0)
+    @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
+    async def b05(self, i, b): await self.save_rating(i, 0.5)
+    @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
+    async def b1(self, i, b): await self.save_rating(i, 1.0)
+    @discord.ui.button(label="1.5", style=discord.ButtonStyle.secondary)
+    async def b15(self, i, b): await self.save_rating(i, 1.5)
+    @discord.ui.button(label="2.0", style=discord.ButtonStyle.secondary)
+    async def b2(self, i, b): await self.save_rating(i, 2.0)
+    @discord.ui.button(label="2.5", style=discord.ButtonStyle.secondary)
+    async def b25(self, i, b): await self.save_rating(i, 2.5)
+    @discord.ui.button(label="3.0", style=discord.ButtonStyle.secondary)
+    async def b3(self, i, b): await self.save_rating(i, 3.0)
+    @discord.ui.button(label="3.5", style=discord.ButtonStyle.secondary)
+    async def b35(self, i, b): await self.save_rating(i, 3.5)
+    @discord.ui.button(label="4.0", style=discord.ButtonStyle.secondary)
+    async def b4(self, i, b): await self.save_rating(i, 4.0)
+    @discord.ui.button(label="4.5", style=discord.ButtonStyle.secondary)
+    async def b45(self, i, b): await self.save_rating(i, 4.5)
+    @discord.ui.button(label="5.0", style=discord.ButtonStyle.success)
+    async def b5(self, i, b): await self.save_rating(i, 5.0)
 
 @bot.tree.command(name="search", description="Search and rate movies")
 @app_commands.describe(movie_name="Name of the movie")
