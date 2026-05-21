@@ -136,7 +136,7 @@ async def on_ready():
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if channel:
-        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.cyan())
+        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.blue())
         await channel.send(embed=embed)
 
 @bot.event
@@ -181,7 +181,6 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str 
 async def untimeout_cmd(ctx, member: discord.Member):
     try:
         await ctx.message.delete()
-        # Ein Timeout von None oder 0 Sekunden hebt die Stummschaltung sofort auf
         await member.timeout(None, reason="Timeout vorzeitig aufgehoben")
         await ctx.send(f"🔊 Das Timeout für **{member.mention}** wurde vorzeitig aufgehoben!", delete_after=10)
     except Exception as e:
@@ -202,10 +201,9 @@ async def ban_cmd(ctx, member: discord.Member, *, reason: str = "Kein Grund ange
 async def unban_cmd(ctx, user_id: str):
     try:
         await ctx.message.delete()
-        # Verwandelt den Text-String der ID in ein echtes Discord-User-Objekt
         user = await bot.fetch_user(int(user_id))
         await ctx.guild.unban(user)
-        await ctx.send(f"🕊️ **{user.name}** wurde erfolgreich entbannt und darf den Server wieder betreten!", delete_after=10)
+        await ctx.send(f"🕊️ **{user.name}** wurde erfolgreich entbannt!", delete_after=10)
     except Exception as e:
         await ctx.send(f"❌ Fehler beim Entbannen (ID korrekt?): {e}", delete_after=5)
 
@@ -229,7 +227,7 @@ async def setup_rules_cmd(ctx):
 async def setup_roles_cmd(ctx):
     try: await ctx.message.delete()
     except: pass
-    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Wähle deine Genres aus:", color=discord.Color.cyan())
+    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Wähle deine Genres aus:", color=discord.Color.blue())
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
@@ -262,7 +260,7 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
 
-            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Bewertung gespeichert!", color=discord.Color.cyan())
+            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Bewertung gespeichert!", color=discord.Color.blue())
             embed.add_field(name="⭐ Durchschnitt", value=f"{avg}/5")
             embed.add_field(name="👤 Deine Note", value=f"{rating}/5")
             await interaction.response.edit_message(embed=embed, view=None)
@@ -299,7 +297,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
         cursor.close()
         conn.close()
 
-        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.cyan())
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.blue())
         embed.add_field(name="⭐ Durchschnitt", value=f"{avg}/5")
         embed.add_field(name="👤 Deine Note", value=f"{user_rating[0] if user_rating else 'Keine'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
