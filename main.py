@@ -5,8 +5,8 @@ import psycopg2
 import logging
 import datetime
 
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
@@ -19,6 +19,8 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+CYAN = discord.Color.from_rgb(0, 255, 255)
 
 # ==========================================
 # CONFIG
@@ -38,8 +40,6 @@ GENRE_ROLES = {
     "🎭 Drama Fan": "🎭 Drama Fan"
 }
 
-CYAN = discord.Color.from_rgb(0, 255, 255)
-
 # ==========================================
 # FLASK KEEP ALIVE
 # ==========================================
@@ -47,12 +47,10 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "CinemaBot is online!"
+    return "Bot online"
 
 def run_web():
-    log = logging.getLogger('wsgi')
-    log.setLevel(logging.ERROR)
-    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 def keep_alive():
     t = Thread(target=run_web)
@@ -106,48 +104,55 @@ def is_admin_or_owner():
     return commands.check(predicate)
 
 # ==========================================
-# TIMEOUT FIX (FINAL)
+# WELCOME
+# ==========================================
+@bot.event
+async def on_member_join(member):
+    channel = bot.get_channel(WELCOME_CHANNEL_ID)
+
+    if channel:
+        embed = discord.Embed(
+            title="🎬 Welcome!",
+            description=f"Welcome {member.mention} 🍿",
+            color=CYAN
+        )
+        await channel.send(embed=embed)
+
+# ==========================================
+# TIMEOUT (SECONDS FIXED)
 # ==========================================
 @bot.command(name="timeout")
 @is_admin_or_owner()
-async def timeout_cmd(ctx, member: discord.Member, minutes: int, *, reason="No reason provided"):
+async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
 
     try:
-        until = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
+        until = discord.utils.utcnow() + datetime.timedelta(seconds=seconds)
 
         await member.timeout(until, reason=reason)
 
-        embed = discord.Embed(
-            title="⏱️ Timeout",
-            description=f"{member.mention} timed out for {minutes} min\nReason: {reason}",
-            color=CYAN
+        await ctx.send(
+            f"⏱️ {member.mention} timed out for **{seconds}s**"
         )
 
-        await ctx.send(embed=embed)
-
     except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions (Moderate Members / Role hierarchy)")
+        await ctx.send("❌ Missing Permissions (role hierarchy / Moderate Members)")
 
     except Exception as e:
-        await ctx.send(f"❌ Timeout Error: {e}")
+        await ctx.send(f"❌ Error: {e}")
 
 @bot.command(name="untimeout")
 @is_admin_or_owner()
 async def untimeout_cmd(ctx, member: discord.Member):
 
     try:
-        await member.timeout(None, reason="Removed timeout")
-
+        await member.timeout(None)
         await ctx.send(f"✅ Timeout removed for {member.mention}")
-
-    except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
 
 # ==========================================
-# RATING SYSTEM (FIXED UX)
+# RATING SYSTEM
 # ==========================================
 class RatingView(discord.ui.View):
 
@@ -158,58 +163,50 @@ class RatingView(discord.ui.View):
 
     async def handle_rating(self, interaction, rating):
 
-        try:
-            conn = psycopg2.connect(DATABASE_URL)
-            cursor = conn.cursor()
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
 
-            cursor.execute("""
-            INSERT INTO ratings (user_id, movie_id, movie_title, rating)
-            VALUES (%s,%s,%s,%s)
-            ON CONFLICT(user_id,movie_id)
-            DO UPDATE SET rating = EXCLUDED.rating
-            """, (
-                str(interaction.user.id),
-                self.movie_id,
-                self.movie_title,
-                rating
-            ))
+        cursor.execute("""
+        INSERT INTO ratings (user_id, movie_id, movie_title, rating)
+        VALUES (%s,%s,%s,%s)
+        ON CONFLICT(user_id,movie_id)
+        DO UPDATE SET rating = EXCLUDED.rating
+        """, (
+            str(interaction.user.id),
+            self.movie_id,
+            self.movie_title,
+            rating
+        ))
 
-            conn.commit()
-            cursor.close()
-            conn.close()
+        conn.commit()
+        cursor.close()
+        conn.close()
 
-            # ONLY USER SEES THIS (FIX)
-            await interaction.response.send_message(
-                f"✅ You rated **{self.movie_title}** → **{rating}/5 ⭐**",
-                ephemeral=True
-            )
-
-        except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Failed to save rating: {e}",
-                ephemeral=True
-            )
+        await interaction.response.send_message(
+            f"✅ Rated **{self.movie_title} → {rating}/5 ⭐**",
+            ephemeral=True
+        )
 
     @discord.ui.select(
-        placeholder="Rate this movie",
+        placeholder="Rate movie",
         options=[
-            discord.SelectOption(label="0.5 ⭐", value="0.5"),
-            discord.SelectOption(label="1.0 ⭐", value="1.0"),
-            discord.SelectOption(label="1.5 ⭐", value="1.5"),
-            discord.SelectOption(label="2.0 ⭐", value="2.0"),
-            discord.SelectOption(label="2.5 ⭐", value="2.5"),
-            discord.SelectOption(label="3.0 ⭐", value="3.0"),
-            discord.SelectOption(label="3.5 ⭐", value="3.5"),
-            discord.SelectOption(label="4.0 ⭐", value="4.0"),
-            discord.SelectOption(label="4.5 ⭐", value="4.5"),
-            discord.SelectOption(label="5.0 ⭐", value="5.0"),
+            discord.SelectOption(label="0.5", value="0.5"),
+            discord.SelectOption(label="1.0", value="1.0"),
+            discord.SelectOption(label="1.5", value="1.5"),
+            discord.SelectOption(label="2.0", value="2.0"),
+            discord.SelectOption(label="2.5", value="2.5"),
+            discord.SelectOption(label="3.0", value="3.0"),
+            discord.SelectOption(label="3.5", value="3.5"),
+            discord.SelectOption(label="4.0", value="4.0"),
+            discord.SelectOption(label="4.5", value="4.5"),
+            discord.SelectOption(label="5.0", value="5.0"),
         ]
     )
     async def select(self, interaction, select):
         await self.handle_rating(interaction, float(select.values[0]))
 
 # ==========================================
-# SEARCH COMMAND
+# SEARCH MOVIES
 # ==========================================
 @bot.tree.command(name="search")
 async def search(interaction: discord.Interaction, movie_name: str):
