@@ -19,10 +19,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 WELCOME_CHANNEL_ID = 1506237698304774215
 ROLES_CHANNEL_ID = 1506237765526880287
-RULES_CHANNEL_ID = 1506237765526880287  # <-- HIER DEINE RULES-CHANNEL-ID EINTRAGEN!
+RULES_CHANNEL_ID = 1506237765526880287
 
-# Rollen-Konfigurationen
-VERIFY_ROLE_NAME = "cinephile"
+# Rollen-Konfigurationen (Exakt angepasst!)
+VERIFY_ROLE_NAME = "🍿 Cinephile"
 
 GENRE_ROLES = {
     "👻 Horror Fan": "👻 Horror Fan",
@@ -105,7 +105,7 @@ class AcceptRulesView(discord.ui.View):
 
         role = discord.utils.get(guild.roles, name=VERIFY_ROLE_NAME)
         if not role:
-            await interaction.response.send_message(f"❌ Die Rolle `{VERIFY_ROLE_NAME}` wurde auf dem Server nicht gefunden! Bitte wende dich an einen Admin.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Die Rolle `{VERIFY_ROLE_NAME}` wurde auf dem Server nicht gefunden! Bitte stelle sicher, dass sie exakt so in den Server-Einstellungen geschrieben steht (inklusive Popcorn-Emoji).", ephemeral=True)
             return
 
         member = interaction.user
@@ -222,7 +222,7 @@ async def setup_rules(ctx):
         ),
         color=discord.Color.from_rgb(0, 255, 0)
     )
-    embed.set_footer(text="Click below to get the 'cinephile' role")
+    embed.set_footer(text="Click below to get the '🍿 Cinephile' role")
     
     await ctx.send(embed=embed, view=AcceptRulesView())
 
@@ -301,10 +301,11 @@ async def search(interaction: discord.Interaction, movie_name: str):
     if poster:
         embed.set_image(url=f"https://image.tmdb.org/t/p/w500{poster}")
 
-    from main import RatingView  # Lokaler Import falls nötig
     await interaction.followup.send(embed=embed, view=RatingView(movie_id, title))
 
-# (RatingView Klasse von zuvor bleibt hier unverändert im Code erhalten...)
+# ==========================================
+# MOVIE RATING INTERACTIVE BUTTONS
+# ==========================================
 class RatingView(discord.ui.View):
     def __init__(self, movie_id: int, movie_title: str):
         super().__init__(timeout=120)
@@ -367,7 +368,15 @@ class RatingView(discord.ui.View):
     @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
     async def b5(self, interaction, button): await self.handle(interaction, 5.0)
 
+# ==========================================
+# APPLIKATIONS-STARTPUNKT
+# ==========================================
 if __name__ == "__main__":
+    print("⏳ Starting Flask web server context for Render...")
     keep_alive()
+    
+    print("⏳ Connecting client context to Discord gateway...")
     if TOKEN:
         bot.run(TOKEN)
+    else:
+        print("❌ CRITICAL ERROR: DISCORD_TOKEN is missing in Environment variables!")
