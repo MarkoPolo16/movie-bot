@@ -7,9 +7,10 @@ from flask import Flask
 from threading import Thread
 import requests
 import psycopg2
+import logging
 
 # ==========================================
-# ENV-VARIABLEN LADEN (Für lokalen PC-Test)
+# ENV-VARIABLEN LADEN
 # ==========================================
 load_dotenv()
 
@@ -22,7 +23,7 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 # Die feste ID für deine Cinephile-Rolle
 VERIFY_ROLE_ID = 1506242963318243379  
 
-# ERLAUBTE ADMIN-ID LISTE (Zusätzliche Absicherung für IDs)
+# ERLAUBTE ADMIN-ID LISTE
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 # Rollen-Namen für das Genre-Menü
@@ -34,7 +35,7 @@ GENRE_ROLES = {
 }
 
 # ==========================================
-# WEBSERVER FÜR RENDER (Hält Bot online)
+# WEBSERVER FÜR RENDER (Warnungsfrei!)
 # ==========================================
 app = Flask('')
 
@@ -44,6 +45,9 @@ def home():
 
 def run_web():
     port = int(os.getenv("PORT", 10000))
+    # Schaltet die Flask-Produktionswarnung im Log stumm
+    log = logging.getLogger('wsgi')
+    log.setLevel(logging.ERROR)
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
@@ -93,27 +97,30 @@ def init_db():
 init_db()
 
 # ==========================================
-# HELFER-FUNKTION: BERECHTIGUNGSPRÜFUNG
+# RECHTE-CHECK (Die unüberwindbare Mauer)
 # ==========================================
-def is_authorized_admin(ctx):
-    """
-    Gibt True zurück, wenn der User entweder die Server-Rechte hat
-    ODER seine ID in der erlaubten Liste steht ODER er der Server-Owner ist.
-    """
-    if ctx.author.id == ctx.guild.owner_id:
-        return True
-    if ctx.author.guild_permissions.administrator:
-        return True
-    if ctx.author.id in ALLOWED_ADMIN_IDS:
-        return True
-    return False
+def is_admin_or_allowed():
+    async def predicate(ctx):
+        # 1. Ist er der Server-Besitzer?
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        # 2. Hat er Admin-Rechte in Discord?
+        if ctx.author.guild_permissions.administrator:
+            return True
+        # 3. Steht seine ID in der erlaubten Liste?
+        if ctx.author.id in ALLOWED_ADMIN_IDS:
+            return True
+        
+        # Wenn nichts zutrifft: Fehler werfen!
+        raise commands.CheckFailure("NO_PERMISSION")
+    return commands.check(predicate)
 
 # ==========================================
 # INTERAKTIVE BUTTONS FÜR REGEL-BESTÄTIGUNG
 # ==========================================
 class AcceptRulesView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # Bleibt permanent aktiv
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="accept_rules_btn")
     async def accept_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -200,17 +207,25 @@ async def on_message(message):
         return
     await bot.process_commands(message)
 
+# FEHLERABFANG FÜR UNBERECHTIGTE USER
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        # Löscht nur die geschriebene !purge Nachricht des unberechtigten Users
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        return
+    raise error
+
 # ==========================================
 # SPERRE FÜR ADMIN PREFIX COMMANDS
 # ==========================================
 @bot.command()
+@is_admin_or_allowed() # Blockiert den Befehl sofort, wenn die Rechte fehlen!
 async def purge(ctx, amount: int):
-    # Greift auf die neue, schlaue Helferfunktion zu
-    if not is_authorized_admin(ctx):
-        await ctx.message.delete()
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return
-
     if amount > 100:
         amount = 100
     if amount < 1:
@@ -226,13 +241,9 @@ async def purge(ctx, amount: int):
         print(f"Purge Fehler: {e}")
 
 @bot.command()
+@is_admin_or_allowed()
 async def setup_rules(ctx):
     """Erstellt das Regel-Embed mit dem Verifizierungs-Button"""
-    if not is_authorized_admin(ctx):
-        await ctx.message.delete()
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return
-
     await ctx.message.delete()
     
     embed = discord.Embed(
@@ -253,13 +264,9 @@ async def setup_rules(ctx):
     await ctx.send(embed=embed, view=AcceptRulesView())
 
 @bot.command()
+@is_admin_or_allowed()
 async def setup_roles(ctx):
     """Erstellt das Genre-Rollen-Embed mit Auswahltasten"""
-    if not is_authorized_admin(ctx):
-        await ctx.message.delete()
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
-        return
-
     await ctx.message.delete()
     
     embed = discord.Embed(
