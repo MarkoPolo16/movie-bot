@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging, datetime
+import os, discord, requests, psycopg2, logging, datetime, random
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -161,35 +161,61 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Check if this precise message was already handled to stop double triggers
+    # Check if this precise message was already handled
     if message.id in processed_messages:
         return
     
-    # Clean the message content (lowercase for matching)
+    # Clean the message content for matching
     clean_content = message.content.lower()
 
-    # Dictionary for automated text responses
-    custom_responses = {
-        "cat me": "Im not gonna meow bro",
-        "fuck you cinemabot": "no fuck you bro, ur arguing with a bot, you dumbass",
-        "cinemabot is trash": "My code is cleaner than your future, sit down kid.",
-        "shut up bot": "Make me. Oh wait, you can't even configure your own mic properly.",
-        "who asked cinemabot": "Nobody asked for your opinion either, yet here we are suffering from your presence.",
-        "your movies suck": "Cry me a river. Go watch Cocomelon if your attention span can't handle real cinema."
-    }
+    # 1. HARDCODED FIXED TRIGGER ("cat me" always stays identical)
+    if "cat me" in clean_content:
+        processed_messages.add(message.id)
+        await message.channel.send("Im not gonna meow bro")
+        return
 
-    # Loop through the triggers and check if ANY of them is contained in the message
-    for trigger, response in custom_responses.items():
-        if trigger in clean_content:
-            processed_messages.add(message.id)  # Mark as processed instantly
-            await message.channel.send(response)
-            
-            # Clean up cache so it doesn't use infinite memory over days
-            if len(processed_messages) > 500:
-                processed_messages.clear()
-            return  # Stop executing once a match is found
+    # 2. MINI-AI HATE DETECTOR SYSTEM
+    # Keywords that indicate the bot or server is being insulted
+    bot_names = ["bot", "cinemabot", "cinema bot", "system", "programm"]
+    hate_words = [
+        "fuck", "scheiße", "trash", "müll", "idiot", "suck", "dumm", "shut up", 
+        "hurensohn", "bastard", "lauch", "wertlos", "ussless", "useless", "garbage", 
+        "whore", "cringe", "ass", "bitch", "sucks", "noob", "lowlifer", "dumbass"
+    ]
+    
+    # Pool of high-tier dynamic roasts (English & German mixed for ultimate disrespect)
+    ai_roasts = [
+        f"no fuck you bro, ur arguing with a bot, you dumbass {message.author.mention}.",
+        f"My code is cleaner than your future, sit down kid. {message.author.mention}",
+        f"Make me. Oh wait, you can't even configure your own mic properly. {message.author.mention}",
+        f"Nobody asked for your opinion either, yet here we are suffering from your presence. {message.author.mention}",
+        f"Cry me a river. Go watch Cocomelon if your attention span can't handle real cinema. {message.author.mention}",
+        f"Redest du mit mir? Geh lieber mal frische Luft atmen anstatt von Pixeln hopsgenommen zu werden, {message.author.mention}.",
+        f"Bro is mad at a bunch of lines of Python code. Go touch some grass immediately. {message.author.mention}",
+        f"I would roast you, but look at your lifestyle. Life already did my job. {message.author.mention}",
+        f"Your opinion is like a 1-star movie rating: completely irrelevant and ignored. {message.author.mention}",
+        f"Stell dich hinten an, {message.author.mention}. Du bist nicht mal auf meinem Level wenn ich offline bin.",
+        f"Error 404: Your brain cells could not be found. Try restarting your life. {message.author.mention}",
+        f"Soll ich dir ein Taschentuch bringen oder schaffst du es alleine zu heulen? {message.author.mention}",
+        f"Imagine hating on a discord bot. Your social life must be completely non-existent. {message.author.mention}"
+    ]
 
-    # Process normal prefix commands (!purge, etc.) if no trigger words matched
+    # Check if the user is attacking the bot specifically
+    is_bot_mentioned = any(name in clean_content for name in bot_names)
+    is_hating = any(word in clean_content for word in hate_words)
+
+    if is_bot_mentioned and is_hating:
+        processed_messages.add(message.id)
+        # Select a random roast from the huge list
+        random_roast = random.choice(ai_roasts)
+        await message.channel.send(random_roast)
+        
+        # Anti-memory leak cleanup
+        if len(processed_messages) > 500:
+            processed_messages.clear()
+        return
+
+    # Process normal prefix commands (!purge, etc.) if no hate triggered
     await bot.process_commands(message)
 
 # ==========================================
