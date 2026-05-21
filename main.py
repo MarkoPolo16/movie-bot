@@ -51,6 +51,9 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Cache für bereits verarbeitete Nachrichten-IDs gegen Doppel-Trigger
+processed_messages = set()
+
 def init_db():
     if not DATABASE_URL: return
     try:
@@ -158,8 +161,12 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Clean the message content
-    clean_content = message.content.strip().lower()
+    # Check if this precise message was already handled to stop double triggers
+    if message.id in processed_messages:
+        return
+    
+    # Clean the message content (lowercase for matching)
+    clean_content = message.content.lower()
 
     # Dictionary for automated text responses
     custom_responses = {
@@ -171,12 +178,18 @@ async def on_message(message):
         "your movies suck": "Cry me a river. Go watch Cocomelon if your attention span can't handle real cinema."
     }
 
-    # If the message matches one of our custom triggers, reply and STOP processing further
-    if clean_content in custom_responses:
-        await message.channel.send(custom_responses[clean_content])
-        return
+    # Loop through the triggers and check if ANY of them is contained in the message
+    for trigger, response in custom_responses.items():
+        if trigger in clean_content:
+            processed_messages.add(message.id)  # Mark as processed instantly
+            await message.channel.send(response)
+            
+            # Clean up cache so it doesn't use infinite memory over days
+            if len(processed_messages) > 500:
+                processed_messages.clear()
+            return  # Stop executing once a match is found
 
-    # Only process normal prefix commands (!purge, etc.) if no custom trigger matched
+    # Process normal prefix commands (!purge, etc.) if no trigger words matched
     await bot.process_commands(message)
 
 # ==========================================
