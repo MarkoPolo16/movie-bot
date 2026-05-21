@@ -158,8 +158,8 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Check if the message content is exactly "me" (case-insensitive)
-    if message.content.strip().lower() == "me":
+    # Check if the message content is exactly "cat me" (case-insensitive)
+    if message.content.strip().lower() == "cat me":
         await message.channel.send("Im not gonna meow bro")
 
     # CRITICAL: This allows prefix commands like !purge to still work!
