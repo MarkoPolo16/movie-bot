@@ -48,12 +48,12 @@ class RulesView(discord.ui.View):
     async def verify(self, i: discord.Interaction, b: discord.ui.Button):
         role = i.guild.get_role(CINEPHILE_ROLE_ID)
         await i.user.add_roles(role)
-        await i.response.send_message("✅ You are now a Cinephile!", ephemeral=True)
+        await i.response.send_message("✅ Role added!", ephemeral=True)
 
 class GenreButtonView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     
-    async def toggle_role(self, i: discord.Interaction, role_id: int):
+    async def toggle(self, i: discord.Interaction, role_id: int):
         role = i.guild.get_role(role_id)
         if role in i.user.roles:
             await i.user.remove_roles(role)
@@ -62,16 +62,16 @@ class GenreButtonView(discord.ui.View):
             await i.user.add_roles(role)
             await i.response.send_message(f"Added {role.name}!", ephemeral=True)
 
-    @discord.ui.button(label="Horror", style=discord.ButtonStyle.primary, custom_id="btn_horror")
-    async def horror(self, i, b): await self.toggle_role(i, 1506300505226346608)
-    @discord.ui.button(label="Action", style=discord.ButtonStyle.primary, custom_id="btn_action")
-    async def action(self, i, b): await self.toggle_role(i, 1506300602773147749)
-    @discord.ui.button(label="Sci-Fi", style=discord.ButtonStyle.primary, custom_id="btn_scifi")
-    async def scifi(self, i, b): await self.toggle_role(i, 1506300638987030599)
-    @discord.ui.button(label="Drama", style=discord.ButtonStyle.primary, custom_id="btn_drama")
-    async def drama(self, i, b): await self.toggle_role(i, 1506300696142544926)
+    @discord.ui.button(label="Horror", style=discord.ButtonStyle.primary, custom_id="btn_horr")
+    async def b1(self, i, b): await self.toggle(i, 1506300505226346608)
+    @discord.ui.button(label="Action", style=discord.ButtonStyle.primary, custom_id="btn_act")
+    async def b2(self, i, b): await self.toggle(i, 1506300602773147749)
+    @discord.ui.button(label="Sci-Fi", style=discord.ButtonStyle.primary, custom_id="btn_sci")
+    async def b3(self, i, b): await self.toggle(i, 1506300638987030599)
+    @discord.ui.button(label="Drama", style=discord.ButtonStyle.primary, custom_id="btn_dra")
+    async def b4(self, i, b): await self.toggle(i, 1506300696142544926)
 
-# --- Autocomplete & Search ---
+# --- Search & Autocomplete ---
 async def movie_autocomplete(i: discord.Interaction, current: str):
     if len(current) < 2: return []
     res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
@@ -90,7 +90,7 @@ async def search(i: discord.Interaction, movie_name: str):
 # --- Admin Commands ---
 @bot.command()
 @is_admin()
-async def setup_rules(ctx): await ctx.send("📜 **Accept the rules to join:**", view=RulesView())
+async def setup_rules(ctx): await ctx.send("📜 **Accept the rules:**", view=RulesView())
 
 @bot.command()
 @is_admin()
