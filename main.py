@@ -286,10 +286,10 @@ class RatingView(discord.ui.View):
     @discord.ui.button(label="5.0", style=discord.ButtonStyle.success)
     async def b5(self, i, b): await self.save_rating(i, 5.0)
 
-@bot.tree.command(name="search", description="Search and rate movies")
+@bot.tree.command(name="rate", description="Search and rate movies")
 @app_commands.describe(movie_name="Name of the movie")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
-async def search(interaction: discord.Interaction, movie_name: str):
+async def rate(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer(ephemeral=True)
     if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.", ephemeral=True)
     try:
