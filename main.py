@@ -16,8 +16,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 CYAN = discord.Color.from_rgb(0, 255, 255)
 
 # IDs
-VERIFY_ROLE_ID = 1506242963318243379
-CINEPHILE_ROLE_ID = 1506242963318243379 # Wie gewünscht für Regeln
+CINEPHILE_ROLE_ID = 1506242963318243379
 
 intents = discord.Intents.default()
 intents.members = True
@@ -40,63 +39,59 @@ def init_db():
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS ratings (user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id))")
     conn.commit(); cur.close(); conn.close()
-
 init_db()
 
 # --- Views ---
 class RulesView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Accept Rules & Get Cinephile", style=discord.ButtonStyle.success, custom_id="rules_btn")
+    @discord.ui.button(label="✅ I accept the rules", style=discord.ButtonStyle.success, custom_id="rules_btn")
     async def verify(self, i: discord.Interaction, b: discord.ui.Button):
         role = i.guild.get_role(CINEPHILE_ROLE_ID)
-        await i.user.add_roles(role)
-        await i.response.send_message("✅ You are now a Cinephile!", ephemeral=True)
+        if role: 
+            await i.user.add_roles(role)
+            await i.response.send_message("✅ You are now a Cinephile!", ephemeral=True)
 
 class GenreView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.select(custom_id="genre_select", placeholder="Choose your genre", options=[
-        discord.SelectOption(label="Horror", value="👻 Horror Fan"),
-        discord.SelectOption(label="Action", value="💥 Action Fan"),
-        discord.SelectOption(label="Sci-Fi", value="🚀 Sci-Fi Fan")
+        discord.SelectOption(label="Horror", value="1506300505226346608"),
+        discord.SelectOption(label="Action", value="1506300602773147749"),
+        discord.SelectOption(label="Sci-Fi", value="1506300638987030599"),
+        discord.SelectOption(label="Drama", value="1506300696142544926")
     ])
     async def select(self, i: discord.Interaction, select: discord.ui.Select):
-        role = discord.utils.get(i.guild.roles, name=select.values[0])
-        await i.user.add_roles(role)
-        await i.response.send_message(f"Role {role.name} added!", ephemeral=True)
-
-class RatingView(discord.ui.View):
-    def __init__(self, m_id, m_title):
-        super().__init__(timeout=60)
-        self.m_id, self.m_title = m_id, m_title
-    @discord.ui.select(placeholder="Rate (0.5 - 5.0)", options=[discord.SelectOption(label=str(x/2), value=str(x/2)) for x in range(1, 11)])
-    async def select(self, i: discord.Interaction, select: discord.ui.Select):
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s,%s,%s,%s) ON CONFLICT(user_id,movie_id) DO UPDATE SET rating = EXCLUDED.rating", 
-                    (str(i.user.id), self.m_id, self.m_title, float(select.values[0])))
-        conn.commit(); cur.close(); conn.close()
-        await i.response.send_message(f"Rated {self.m_title} with {select.values[0]} stars!", ephemeral=True)
+        role = i.guild.get_role(int(select.values[0]))
+        if role in i.user.roles:
+            await i.user.remove_roles(role)
+            await i.response.send_message(f"Removed {role.name}", ephemeral=True)
+        else:
+            await i.user.add_roles(role)
+            await i.response.send_message(f"Added {role.name}!", ephemeral=True)
 
 # --- Commands ---
 @bot.command()
-async def setup_rules(ctx): await ctx.send("Accept Rules:", view=RulesView())
+async def setup_rules(ctx): 
+    embed = discord.Embed(title="📜 Server Rules", description="1. Be respectful to all members.\n2. No harassment or hate speech.\n3. Keep discussions movie-related.\n4. No spamming in channels.\n\nClick below to get your role.", color=CYAN)
+    await ctx.send(embed=embed, view=RulesView())
 
 @bot.command()
-async def setup_roles(ctx): await ctx.send("Choose Genre:", view=GenreView())
+async def setup_roles(ctx): await ctx.send("🎭 **Select your favorite genres:**", view=GenreView())
 
-async def movie_autocomplete(i: discord.Interaction, current: str):
-    if len(current) < 2: return []
-    res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
-    return [app_commands.Choice(name=m["title"], value=m["title"]) for m in res.get("results", [])[:5]]
+@bot.command()
+async def purge(ctx, amount: int): await ctx.channel.purge(limit=min(amount, 100) + 1)
+
+@bot.command()
+async def timeout(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
+    await member.timeout(discord.utils.utcnow() + discord.timedelta(seconds=seconds), reason=reason)
+    await ctx.send(f"⏱️ {member.name} timed out.")
 
 @bot.tree.command(name="search")
-@app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(i: discord.Interaction, movie_name: str):
     await i.response.defer()
     res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
     if not res.get("results"): return await i.followup.send("❌ Not found.")
     m = res["results"][0]
-    await i.followup.send(embed=discord.Embed(title=m["title"], color=CYAN), view=RatingView(m["id"], m["title"]))
+    await i.followup.send(embed=discord.Embed(title=m["title"], description=m.get("overview")[:200], color=CYAN))
 
 @bot.event
 async def on_ready():
