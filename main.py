@@ -159,7 +159,12 @@ class RoleToggleView(discord.ui.View):
 async def on_ready():
     bot.add_view(AcceptRulesView())
     bot.add_view(RoleToggleView())
-    await bot.tree.sync()
+    try:
+        # Force a global sync to update /search across all servers instantly
+        await bot.tree.sync()
+        print("⚡ Global application commands synced successfully.")
+    except Exception as e:
+        print(f"Failed to sync commands globally: {e}")
     print(f"🎬 {bot.user} is ready!")
 
 @bot.event
@@ -189,14 +194,12 @@ async def on_message(message):
 
     clean_content = message.content.lower()
 
-    # TRIGGER 1: "cat me" (mitten im Satz)
     if "cat me" in clean_content:
         if not try_acquire_response_lock():
             return
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # TRIGGER 2: "fuck you" (mitten im Satz)
     if "fuck you" in clean_content:
         if not try_acquire_response_lock():
             return
@@ -356,7 +359,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
-    except Exception as e: await interaction.followup.send(f"Error: {e}")
+    except Exception as e: await interaction.followup.send(f"Error loading movie: {e}")
 
 if __name__ == "__main__":
     keep_alive()
