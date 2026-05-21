@@ -152,6 +152,19 @@ async def on_command_error(ctx, error):
         await ctx.send(f"{ctx.author.mention}, ❌ {msg}", delete_after=5)
         return
 
+@bot.event
+async def on_message(message):
+    # Ignore messages sent by the bot itself to prevent infinite loops
+    if message.author.bot:
+        return
+
+    # Check if the message content is exactly "me" (case-insensitive)
+    if message.content.strip().lower() == "me":
+        await message.channel.send("Im not gonna meow bro")
+
+    # CRITICAL: This allows prefix commands like !purge to still work!
+    await bot.process_commands(message)
+
 # ==========================================
 # SECTION: ADMIN & OWNER COMMANDS (Moderation)
 # ==========================================
