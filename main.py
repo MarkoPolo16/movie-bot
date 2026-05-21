@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging, datetime
+import os, discord, requests, psycopg2, logging, datetime, re
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -243,12 +243,9 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
         choices = []
         for m in data.get("results", [])[:5]:
             if m.get("title"):
-                # Extract year from release_date (format is YYYY-MM-DD)
-                year = m.get("release_date", "")[:4]
-                year_str = f" ({year})" if year else ""
-                
-                # Show "Title (Year)" in the dropdown, but keep the value as just the "Title"
-                choices.append(app_commands.Choice(name=f"{m['title']}{year_str}", value=m["title"]))
+                year = m.get("release_date", "0000")[:4]
+                label = f"{m['title']} ({year})"
+                choices.append(app_commands.Choice(name=label, value=label))
         return choices
     except: return []
 
@@ -302,9 +299,14 @@ async def rate(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer(ephemeral=True)
     if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.", ephemeral=True)
     try:
-        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
+        clean_name = re.sub(r'\s\(\d{4}\)$', '', movie_name)
+        year_match = re.search(r'\((\d{4})\)', movie_name)
+        target_year = year_match.group(1) if year_match else None
+        
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={clean_name}").json()
         if not data.get("results"): return await interaction.followup.send("No movies found.", ephemeral=True)
-        movie = data["results"][0]
+        
+        movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
         
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -329,9 +331,14 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 async def film_info(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
     try:
-        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
+        clean_name = re.sub(r'\s\(\d{4}\)$', '', movie_name)
+        year_match = re.search(r'\((\d{4})\)', movie_name)
+        target_year = year_match.group(1) if year_match else None
+        
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={clean_name}").json()
         if not data.get("results"): return await interaction.followup.send("Kein Film gefunden.")
-        movie = data["results"][0]
+        
+        movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
         
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
