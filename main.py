@@ -94,15 +94,16 @@ class AcceptRulesView(discord.ui.View):
     @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="accept_rules_btn")
     async def accept_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
-        if not role: return await interaction.response.send_message("❌ Role not found!", ephemeral=True)
-        if role in interaction.user.roles:
-            await interaction.response.send_message("ℹ️ You already have this role!", ephemeral=True)
-        else:
-            try:
-                await interaction.user.add_roles(role)
-                await interaction.response.send_message(f"🎉 Role **{role.name}** assigned! 🍿", ephemeral=True)
-            except:
-                await interaction.response.send_message("❌ Move the Bot role higher up in the server settings!", ephemeral=True)
+        if not role: 
+            return await interaction.response.send_message("❌ Role ID ist falsch konfiguriert!", ephemeral=True)
+        
+        try:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(f"🎉 Du hast die Regeln akzeptiert und die Rolle **{role.name}** erhalten! 🍿", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Der Bot hat keine Berechtigung, Rollen zu vergeben. Bitte prüfe die Rollen-Reihenfolge!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Ein Fehler ist aufgetreten: {e}", ephemeral=True)
 
 class RoleButton(discord.ui.Button):
     def __init__(self, label: str): super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"role_{label}")
