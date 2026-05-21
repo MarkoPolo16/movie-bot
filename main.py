@@ -234,7 +234,7 @@ async def setup_roles_cmd(ctx):
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
-# MOVIE SEARCH & RATINGS (SLASH-COMMAND)
+# MOVIE SEARCH & RATINGS (SLASH-COMMANDS)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
@@ -313,6 +313,30 @@ async def search(interaction: discord.Interaction, movie_name: str):
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+@bot.tree.command(name="film", description="Zeige Filminformationen für alle")
+@app_commands.describe(movie_name="Name des Films")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
+async def film_info(interaction: discord.Interaction, movie_name: str):
+    await interaction.response.defer()
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
+        if not data.get("results"): return await interaction.followup.send("Kein Film gefunden.")
+        movie = data["results"][0]
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        avg = round(cursor.fetchone()[0] or 0.0, 1)
+        cursor.close()
+        conn.close()
+
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=CYAN)
+        embed.add_field(name="⭐ Server Average", value=f"{avg}/5")
+        if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 @bot.tree.command(name="topliste", description="Zeigt die Top 10 Bewerter")
 async def topliste(interaction: discord.Interaction):
