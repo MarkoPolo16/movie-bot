@@ -38,6 +38,9 @@ GENRE_ROLES = {
     "🎭 Drama Fan": "🎭 Drama Fan"
 }
 
+# ==========================================
+# COLORS
+# ==========================================
 CYAN = discord.Color.from_rgb(0, 255, 255)
 
 # ==========================================
@@ -87,7 +90,6 @@ def init_db():
         return
 
     try:
-
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
 
@@ -165,7 +167,6 @@ class AcceptRulesView(discord.ui.View):
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
 
         if not role:
-
             return await interaction.response.send_message(
                 "❌ Verification role not found.",
                 ephemeral=True
@@ -179,9 +180,7 @@ class AcceptRulesView(discord.ui.View):
             )
 
         else:
-
             try:
-
                 await interaction.user.add_roles(role)
 
                 await interaction.response.send_message(
@@ -274,7 +273,6 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands")
-
     except Exception as e:
         print(f"❌ Sync Error: {e}")
 
@@ -302,15 +300,20 @@ async def on_member_join(member):
         await channel.send(embed=embed)
 
 # ==========================================
-# COMMAND ERRORS
+# COMMAND ERROR HANDLER
 # ==========================================
 @bot.event
 async def on_command_error(ctx, error):
 
     if isinstance(error, commands.CheckFailure):
 
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+
         await ctx.send(
-            "❌ You don't have permission.",
+            "❌ You don't have permission to use this command.",
             delete_after=5
         )
 
@@ -319,7 +322,7 @@ async def on_command_error(ctx, error):
     print(error)
 
 # ==========================================
-# PURGE
+# PURGE COMMAND
 # ==========================================
 @bot.command(name="purge")
 @is_admin_or_owner()
@@ -332,14 +335,14 @@ async def purge_cmd(ctx, amount: int):
         return
 
     try:
-
-        await ctx.channel.purge(limit=amount + 1)
+        await ctx.message.delete()
+        await ctx.channel.purge(limit=amount)
 
     except Exception as e:
-        print(e)
+        print(f"Purge Error: {e}")
 
 # ==========================================
-# TIMEOUT
+# TIMEOUT COMMAND
 # ==========================================
 @bot.command(name="timeout")
 @is_admin_or_owner()
@@ -353,12 +356,10 @@ async def timeout_cmd(
 
     try:
 
-        until = discord.utils.utcnow() + datetime.timedelta(
-            minutes=minutes
-        )
+        duration = datetime.timedelta(minutes=minutes)
 
-        await member.edit(
-            timed_out_until=until,
+        await member.timeout_for(
+            duration,
             reason=reason
         )
 
@@ -381,7 +382,7 @@ async def timeout_cmd(
         )
 
 # ==========================================
-# UNTIMEOUT
+# UNTIMEOUT COMMAND
 # ==========================================
 @bot.command(name="untimeout")
 @is_admin_or_owner()
@@ -408,7 +409,7 @@ async def untimeout_cmd(ctx, member: discord.Member):
         )
 
 # ==========================================
-# BAN
+# BAN COMMAND
 # ==========================================
 @bot.command(name="ban")
 @is_admin_or_owner()
@@ -424,17 +425,19 @@ async def ban_cmd(
         await member.ban(reason=reason)
 
         await ctx.send(
-            f"🔨 Banned {member.name}"
+            f"🔨 Banned {member.name}",
+            delete_after=10
         )
 
     except Exception as e:
 
         await ctx.send(
-            f"❌ Error: {e}"
+            f"❌ Error: {e}",
+            delete_after=5
         )
 
 # ==========================================
-# UNBAN
+# UNBAN COMMAND
 # ==========================================
 @bot.command(name="unban")
 @is_admin_or_owner()
@@ -447,13 +450,15 @@ async def unban_cmd(ctx, user_id: str):
         await ctx.guild.unban(user)
 
         await ctx.send(
-            f"✅ Unbanned {user.name}"
+            f"✅ Unbanned {user.name}",
+            delete_after=10
         )
 
     except Exception as e:
 
         await ctx.send(
-            f"❌ Error: {e}"
+            f"❌ Error: {e}",
+            delete_after=5
         )
 
 # ==========================================
@@ -488,7 +493,7 @@ async def setup_roles_cmd(ctx):
 
     embed = discord.Embed(
         title="🎭 Choose Your Genres",
-        description="Select your favorite genres below.",
+        description="Select your favorite movie genres below.",
         color=CYAN
     )
 
@@ -542,7 +547,6 @@ class RatingView(discord.ui.View):
     async def handle_rating(self, interaction, rating):
 
         try:
-
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
 
@@ -572,10 +576,7 @@ class RatingView(discord.ui.View):
             WHERE movie_id=%s
             """, (self.movie_id,))
 
-            avg = round(
-                cursor.fetchone()[0] or 0.0,
-                1
-            )
+            avg = round(cursor.fetchone()[0] or 0.0, 1)
 
             cursor.close()
             conn.close()
@@ -657,6 +658,12 @@ async def search(
 
     await interaction.response.defer()
 
+    if not TMDB_API_KEY:
+
+        return await interaction.followup.send(
+            "❌ TMDB API key missing."
+        )
+
     try:
 
         data = requests.get(
@@ -723,6 +730,22 @@ async def search(
                 value=f"{user_rating[0]}/5"
             )
 
+        if movie.get("release_date"):
+
+            embed.add_field(
+                name="📅 Release Date",
+                value=movie["release_date"],
+                inline=True
+            )
+
+        if movie.get("vote_average"):
+
+            embed.add_field(
+                name="🔥 TMDB Score",
+                value=f"{round(movie['vote_average'],1)}/10",
+                inline=True
+            )
+
         if movie.get("poster_path"):
 
             embed.set_image(
@@ -752,6 +775,5 @@ if __name__ == "__main__":
 
     if TOKEN:
         bot.run(TOKEN)
-
     else:
         print("❌ DISCORD_TOKEN missing")
