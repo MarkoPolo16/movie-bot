@@ -41,7 +41,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# KEEP ALIVE (FLASK)
+# KEEP ALIVE
 # ==========================================
 app = Flask("")
 
@@ -55,7 +55,7 @@ def keep_alive():
     t.start()
 
 # ==========================================
-# DATABASE
+# DB
 # ==========================================
 def init_db():
     if not DATABASE_URL:
@@ -85,14 +85,11 @@ init_db()
 # ==========================================
 def is_admin_or_owner():
     async def predicate(ctx):
-        return (
-            ctx.author.id == ctx.guild.owner_id
-            or ctx.author.id in ALLOWED_ADMIN_IDS
-        )
+        return ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS
     return commands.check(predicate)
 
 # ==========================================
-# 👋 WELCOME SYSTEM
+# 👋 WELCOME
 # ==========================================
 @bot.event
 async def on_member_join(member):
@@ -108,7 +105,7 @@ async def on_member_join(member):
         )
 
 # ==========================================
-# ⏱️ TIMEOUT (SECONDS - FIXED)
+# ⏱️ TIMEOUT (SECONDS FIXED)
 # ==========================================
 @bot.command(name="timeout")
 @is_admin_or_owner()
@@ -119,18 +116,14 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No r
 
         await member.timeout(until, reason=reason)
 
-        await ctx.send(
-            f"⏱️ {member.mention} timed out for **{seconds} seconds** | Reason: {reason}"
-        )
+        await ctx.send(f"⏱️ {member.mention} timed out for **{seconds}s**")
 
     except discord.Forbidden:
         await ctx.send("❌ Missing Permissions")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
-# ==========================================
-# 🔊 UNTIMEOUT
-# ==========================================
+
 @bot.command(name="untimeout")
 @is_admin_or_owner()
 async def untimeout_cmd(ctx, member: discord.Member):
@@ -143,32 +136,26 @@ async def untimeout_cmd(ctx, member: discord.Member):
         await ctx.send(f"❌ Error: {e}")
 
 # ==========================================
-# 🧹 PURGE COMMAND
+# 🧹 PURGE
 # ==========================================
 @bot.command(name="purge")
 @is_admin_or_owner()
 async def purge_cmd(ctx, amount: int):
 
     try:
-        if amount < 1:
-            return
-
-        if amount > 100:
-            amount = 100
-
+        amount = max(1, min(amount, 100))
         await ctx.channel.purge(limit=amount + 1)
-
         msg = await ctx.send(f"🧹 Deleted {amount} messages")
         await msg.delete(delay=3)
 
     except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions (Manage Messages)")
+        await ctx.send("❌ Missing Permissions")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
 
 # ==========================================
-# 📜 VERIFY BUTTON
+# 📜 RULES + VERIFY (FIXED FULL SYSTEM)
 # ==========================================
 class VerifyView(discord.ui.View):
 
@@ -181,41 +168,28 @@ class VerifyView(discord.ui.View):
         role = interaction.guild.get_role(VERIFY_ROLE_ID)
 
         if role is None:
-            await interaction.response.send_message(
-                "❌ Role not found (wrong VERIFY_ROLE_ID)",
-                ephemeral=True
-            )
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
             return
 
-        # already verified
         if role in interaction.user.roles:
-            await interaction.response.send_message(
-                "ℹ️ You already accepted the rules.",
-                ephemeral=True
-            )
+            await interaction.response.send_message("ℹ️ Already verified", ephemeral=True)
             return
 
         try:
             await interaction.user.add_roles(role)
-
-            await interaction.response.send_message(
-                "🎉 Rules accepted! You are now verified.",
-                ephemeral=True
-            )
+            await interaction.response.send_message("🎉 Verified! You now have access.", ephemeral=True)
 
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ Bot cannot give role (check role hierarchy / Manage Roles)",
+                "❌ Bot missing permissions / role hierarchy issue",
                 ephemeral=True
             )
 
         except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Error: {e}",
-                ephemeral=True
-            )
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
 # ==========================================
-# 🎭 GENRE ROLES
+# 🎭 ROLES
 # ==========================================
 class RoleView(discord.ui.View):
 
@@ -240,7 +214,7 @@ class RoleView(discord.ui.View):
             await interaction.response.send_message("Role added", ephemeral=True)
 
 # ==========================================
-# ⭐ RATING SYSTEM
+# ⭐ RATING
 # ==========================================
 class RatingView(discord.ui.View):
 
@@ -271,7 +245,7 @@ class RatingView(discord.ui.View):
         conn.close()
 
         await interaction.response.send_message(
-            f"✅ Rated **{self.movie_title} → {rating}/5 ⭐**",
+            f"✅ Rated {self.movie_title} → {rating}/5 ⭐",
             ephemeral=True
         )
 
@@ -319,8 +293,12 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
 # ==========================================
-# START BOT
+# START
 # ==========================================
 if __name__ == "__main__":
     keep_alive()
+
+    # IMPORTANT: persistent view for rules button
+    bot.add_view(VerifyView())
+
     bot.run(TOKEN)
