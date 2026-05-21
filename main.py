@@ -98,7 +98,7 @@ def try_acquire_response_lock():
         return True
 
 # ==========================================
-# PERMISSION CHECKS (SECURITY WALLS)
+# PERMISSION CHECKS
 # ==========================================
 def is_owner():
     async def predicate(ctx):
@@ -189,15 +189,15 @@ async def on_message(message):
 
     clean_content = message.content.lower()
 
-    # 1. TRIGGER: "cat me" (irgendwo im Satz)
+    # TRIGGER 1: "cat me" (mitten im Satz)
     if "cat me" in clean_content:
         if not try_acquire_response_lock():
             return
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # 2. TRIGGER: "fuck you cinemabot" (irgendwo im Satz)
-    if "fuck you cinemabot" in clean_content:
+    # TRIGGER 2: "fuck you" (mitten im Satz)
+    if "fuck you" in clean_content:
         if not try_acquire_response_lock():
             return
         await message.channel.send("no fuck you bro, ur arguing with a bot, you dumbass")
