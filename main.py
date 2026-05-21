@@ -18,10 +18,17 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 WELCOME_CHANNEL_ID = 1506237698304774215
-RULES_CHANNEL_ID = 1506237736653422623
 
 # Die feste ID für deine Cinephile-Rolle
 VERIFY_ROLE_ID = 1506242963318243379  
+
+# Rollen-Namen für das Genre-Menü
+GENRE_ROLES = {
+    "👻 Horror Fan": "👻 Horror Fan",
+    "💥 Action Fan": "💥 Action Fan",
+    "🚀 Sci-Fi Fan": "🚀 Sci-Fi Fan",
+    "🎭 Drama Fan": "🎭 Drama Fan"
+}
 
 # ==========================================
 # WEBSERVER FÜR RENDER (Hält Bot online)
@@ -95,7 +102,6 @@ class AcceptRulesView(discord.ui.View):
         if not guild:
             return
 
-        # Holt die Rolle über die von dir gegebene ID
         role = guild.get_role(VERIFY_ROLE_ID)
         if not role:
             await interaction.response.send_message("❌ Die Cinephile-Rolle wurde mit dieser ID auf dem Server nicht gefunden!", ephemeral=True)
@@ -112,12 +118,50 @@ class AcceptRulesView(discord.ui.View):
                 await interaction.response.send_message("❌ Der Bot darf dir diese Rolle nicht geben. Bitte stell sicher, dass die Bot-Rolle (mit dem Roboter-Symbol) in den Server-Einstellungen ganz oben steht!", ephemeral=True)
 
 # ==========================================
+# INTERAKTIVE BUTTONS FÜR ROLLEN-AUSWAHL (GENRES)
+# ==========================================
+class RoleButton(discord.ui.Button):
+    def __init__(self, label: str):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"role_{label}")
+
+    async def callback(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        role_name = GENRE_ROLES.get(self.label)
+        
+        if not guild or not role_name:
+            await interaction.response.send_message("❌ Server-Fehler bei der Rollenzuweisung.", ephemeral=True)
+            return
+
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            await interaction.response.send_message(f"❌ Rolle `{role_name}` nicht gefunden.", ephemeral=True)
+            return
+
+        member = interaction.user
+        if role in member.roles:
+            await member.remove_roles(role)
+            await interaction.response.send_message(f"🎭 Rolle **{role_name}** entfernt.", ephemeral=True)
+        else:
+            try:
+                await member.add_roles(role)
+                await interaction.response.send_message(f"🎉 Rolle **{role_name}** zugewiesen!", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ Der Bot darf diese Rolle nicht vergeben. Zieh die Bot-Rolle (Roboter-Symbol) in den Einstellungen ganz nach oben!", ephemeral=True)
+
+class RoleToggleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for label in GENRE_ROLES.keys():
+            self.add_item(RoleButton(label))
+
+# ==========================================
 # DISCORD BOT EVENTS
 # ==========================================
 @bot.event
 async def on_ready():
-    # Registriert die Buttons beim Start des Bots
+    # Registriert beide Views beim Start des Bots
     bot.add_view(AcceptRulesView())
+    bot.add_view(RoleToggleView())
     await bot.tree.sync()
     print(f"🎬 {bot.user} is online and fully synced with Discord!")
 
@@ -132,7 +176,6 @@ async def on_member_join(member):
         )
         await channel.send(embed=embed)
 
-# DIESER TEIL WAR DER FEHLER: Erlaubt dem Bot wieder auf !-Befehle zu hören!
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -140,7 +183,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================================
-# ADMIN PREFIX COMMANDS (PURGE & RULES SETUP)
+# ADMIN PREFIX COMMANDS (PURGE, RULES & ROLES)
 # ==========================================
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -163,10 +206,6 @@ async def purge(ctx, amount: int):
 @commands.has_permissions(administrator=True)
 async def setup_rules(ctx):
     """Erstellt das Regel-Embed mit dem Verifizierungs-Button"""
-    if ctx.channel.id != RULES_CHANNEL_ID:
-        await ctx.send(f"❌ Dieser Befehl kann nur im Rules-Kanal ausgeführt werden!", delete_after=5)
-        return
-
     await ctx.message.delete()
     
     embed = discord.Embed(
@@ -185,6 +224,19 @@ async def setup_rules(ctx):
     embed.set_footer(text="Click below to get verified")
     
     await ctx.send(embed=embed, view=AcceptRulesView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """Erstellt das Genre-Rollen-Embed mit Auswahltasten"""
+    await ctx.message.delete()
+    
+    embed = discord.Embed(
+        title="🎭 Choose your Movie Genres!",
+        description="Click the buttons below to select the genres you are interested in.",
+        color=discord.Color.from_rgb(0, 255, 255)
+    )
+    await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
 # MOVIE AUTOCOMPLETE FOR SLASH COMMAND
