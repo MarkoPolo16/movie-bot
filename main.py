@@ -17,11 +17,21 @@ CYAN = discord.Color.from_rgb(0, 255, 255)
 
 # IDs
 CINEPHILE_ROLE_ID = 1506242963318243379
+ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# --- Security Check ---
+def is_admin():
+    async def predicate(ctx):
+        if ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS:
+            return True
+        await ctx.send("❌ You don't have permission to use this command.", delete_after=5)
+        return False
+    return commands.check(predicate)
 
 # --- Keep Alive ---
 app = Flask("")
@@ -71,19 +81,27 @@ class GenreView(discord.ui.View):
 # --- Commands ---
 @bot.command()
 async def setup_rules(ctx): 
-    embed = discord.Embed(title="📜 Server Rules", description="1. Be respectful to all members.\n2. No harassment or hate speech.\n3. Keep discussions movie-related.\n4. No spamming in channels.\n\nClick below to get your role.", color=CYAN)
+    embed = discord.Embed(title="📜 Server Rules", description="1. Be respectful.\n2. No hate speech.\n3. Keep it movie-related.\n\nClick below to get the Cinephile role.", color=CYAN)
     await ctx.send(embed=embed, view=RulesView())
 
 @bot.command()
 async def setup_roles(ctx): await ctx.send("🎭 **Select your favorite genres:**", view=GenreView())
 
 @bot.command()
+@is_admin()
 async def purge(ctx, amount: int): await ctx.channel.purge(limit=min(amount, 100) + 1)
 
 @bot.command()
+@is_admin()
 async def timeout(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
     await member.timeout(discord.utils.utcnow() + discord.timedelta(seconds=seconds), reason=reason)
-    await ctx.send(f"⏱️ {member.name} timed out.")
+    await ctx.send(f"⏱️ {member.name} has been timed out.")
+
+@bot.command()
+@is_admin()
+async def untimeout(ctx, member: discord.Member):
+    await member.timeout(None)
+    await ctx.send(f"🔊 Timeout for {member.name} removed.")
 
 @bot.tree.command(name="search")
 async def search(i: discord.Interaction, movie_name: str):
@@ -98,7 +116,7 @@ async def on_ready():
     bot.add_view(RulesView())
     bot.add_view(GenreView())
     await bot.tree.sync()
-    print("Bot ready.")
+    print("Bot is ready and secure.")
 
 if __name__ == "__main__":
     keep_alive()
