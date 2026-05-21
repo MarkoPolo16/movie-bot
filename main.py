@@ -314,8 +314,8 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
-@bot.tree.command(name="film", description="Zeige Filminformationen für alle")
-@app_commands.describe(movie_name="Name des Films")
+@bot.tree.command(name="film", description="Show movie information for all")
+@app_commands.describe(movie_name="Name of the Movie")
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def film_info(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
