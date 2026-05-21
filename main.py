@@ -723,10 +723,12 @@ async def search(
             value=f"{avg}/5"
         )
 
-        embed.add_field(
-            name="👤 Your Rating",
-            value=f"{user_rating[0]}/5" if user_rating else "Not rated"
-        )
+        if user_rating:
+
+            embed.add_field(
+                name="👤 Your Rating",
+                value=f"{user_rating[0]}/5"
+            )
 
         if movie.get("release_date"):
 
