@@ -22,6 +22,9 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 # Die feste ID für deine Cinephile-Rolle
 VERIFY_ROLE_ID = 1506242963318243379  
 
+# ERLAUBTE ADMIN-ID LISTE (Nur diese User dürfen Admin-Befehle nutzen)
+ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
+
 # Rollen-Namen für das Genre-Menü
 GENRE_ROLES = {
     "👻 Horror Fan": "👻 Horror Fan",
@@ -159,7 +162,6 @@ class RoleToggleView(discord.ui.View):
 # ==========================================
 @bot.event
 async def on_ready():
-    # Registriert beide Views beim Start des Bots
     bot.add_view(AcceptRulesView())
     bot.add_view(RoleToggleView())
     await bot.tree.sync()
@@ -183,11 +185,16 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================================
-# ADMIN PREFIX COMMANDS (PURGE, RULES & ROLES)
+# SPERRE FÜR ADMIN PREFIX COMMANDS (ID CHECK)
 # ==========================================
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def purge(ctx, amount: int):
+    # Prüft, ob der User in der Erlaubt-Liste steht
+    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        await ctx.message.delete()
+        return
+
     if amount > 100:
         amount = 100
     if amount < 1:
@@ -203,9 +210,14 @@ async def purge(ctx, amount: int):
         print(f"Purge Fehler: {e}")
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def setup_rules(ctx):
     """Erstellt das Regel-Embed mit dem Verifizierungs-Button"""
+    # Prüft, ob der User in der Erlaubt-Liste steht
+    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        await ctx.message.delete()
+        return
+
     await ctx.message.delete()
     
     embed = discord.Embed(
@@ -226,9 +238,14 @@ async def setup_rules(ctx):
     await ctx.send(embed=embed, view=AcceptRulesView())
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def setup_roles(ctx):
     """Erstellt das Genre-Rollen-Embed mit Auswahltasten"""
+    # Prüft, ob der User in der Erlaubt-Liste steht
+    if ctx.author.id not in ALLOWED_ADMIN_IDS:
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        await ctx.message.delete()
+        return
+
     await ctx.message.delete()
     
     embed = discord.Embed(
