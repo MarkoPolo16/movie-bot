@@ -159,12 +159,7 @@ class RoleToggleView(discord.ui.View):
 async def on_ready():
     bot.add_view(AcceptRulesView())
     bot.add_view(RoleToggleView())
-    try:
-        # Force a global sync to update /search across all servers instantly
-        await bot.tree.sync()
-        print("⚡ Global application commands synced successfully.")
-    except Exception as e:
-        print(f"Failed to sync commands globally: {e}")
+    await bot.tree.sync()
     print(f"🎬 {bot.user} is ready!")
 
 @bot.event
@@ -287,12 +282,13 @@ async def setup_roles_cmd(ctx):
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
-# MOVIE SEARCH & RATINGS (SLASH-COMMAND)
+# ORIGINAL MOVIE SEARCH & RATINGS
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
-    if not current or not TMDB_API_KEY: return []
+    if not current: return []
     try:
-        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}"
+        data = requests.get(url).json()
         return [app_commands.Choice(name=m["title"], value=m["title"]) for m in data.get("results", [])[:5] if m.get("title")]
     except: return []
 
@@ -320,7 +316,7 @@ class RatingView(discord.ui.View):
             embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
             embed.add_field(name="👤 Your Rating", value=f"{rating}/5")
             await interaction.response.edit_message(embed=embed, view=None)
-        except Exception as e: print(e)
+        except: pass
 
     @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
     async def b1(self, interaction, button): await self.handle_rating(interaction, 1.0)
@@ -338,9 +334,9 @@ class RatingView(discord.ui.View):
 @app_commands.autocomplete(movie_name=movie_autocomplete)
 async def search(interaction: discord.Interaction, movie_name: str):
     await interaction.response.defer()
-    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.")
     try:
-        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
+        data = requests.get(url).json()
         if not data.get("results"): return await interaction.followup.send("No movies found.")
         movie = data["results"][0]
         
@@ -359,7 +355,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
-    except Exception as e: await interaction.followup.send(f"Error loading movie: {e}")
+    except: pass
 
 if __name__ == "__main__":
     keep_alive()
