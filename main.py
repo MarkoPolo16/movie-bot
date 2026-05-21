@@ -2,7 +2,6 @@ import os
 import discord
 import requests
 import psycopg2
-import logging
 import datetime
 
 from discord.ext import commands
@@ -32,19 +31,21 @@ ALLOWED_ADMIN_IDS = [
     1506242109689299004
 ]
 
-GENRE_ROLES = {
-    "👻 Horror": "👻 Horror Fan",
-    "💥 Action": "💥 Action Fan",
-    "🚀 Sci-Fi": "🚀 Sci-Fi Fan",
-    "🎭 Drama": "🎭 Drama Fan"
-}
+# ==========================================
+# BOT SETUP
+# ==========================================
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# FLASK KEEP ALIVE
+# KEEP ALIVE (FLASK)
 # ==========================================
-app = Flask('')
+app = Flask("")
 
-@app.route('/')
+@app.route("/")
 def home():
     return "Bot online"
 
@@ -54,16 +55,7 @@ def keep_alive():
     t.start()
 
 # ==========================================
-# BOT
-# ==========================================
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-# ==========================================
-# DB
+# DATABASE
 # ==========================================
 def init_db():
     if not DATABASE_URL:
@@ -89,19 +81,23 @@ def init_db():
 init_db()
 
 # ==========================================
-# PERMISSION CHECK
+# PERMISSIONS
 # ==========================================
 def is_admin_or_owner():
     async def predicate(ctx):
-        return ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS
+        return (
+            ctx.author.id == ctx.guild.owner_id
+            or ctx.author.id in ALLOWED_ADMIN_IDS
+        )
     return commands.check(predicate)
 
 # ==========================================
-# 👋 WELCOME
+# 👋 WELCOME SYSTEM
 # ==========================================
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
+
     if channel:
         await channel.send(
             embed=discord.Embed(
@@ -112,7 +108,68 @@ async def on_member_join(member):
         )
 
 # ==========================================
-# 📜 RULES + VERIFY
+# ⏱️ TIMEOUT (SECONDS - FIXED)
+# ==========================================
+@bot.command(name="timeout")
+@is_admin_or_owner()
+async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
+
+    try:
+        until = discord.utils.utcnow() + datetime.timedelta(seconds=seconds)
+
+        await member.timeout(until, reason=reason)
+
+        await ctx.send(
+            f"⏱️ {member.mention} timed out for **{seconds} seconds**"
+        )
+
+    except discord.Forbidden:
+        await ctx.send("❌ Missing Permissions (role hierarchy / moderate members)")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
+# ==========================================
+# 🔊 UNTIMEOUT
+# ==========================================
+@bot.command(name="untimeout")
+@is_admin_or_owner()
+async def untimeout_cmd(ctx, member: discord.Member):
+
+    try:
+        await member.timeout(None)
+        await ctx.send(f"🔊 Timeout removed for {member.mention}")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
+# ==========================================
+# 🧹 PURGE COMMAND
+# ==========================================
+@bot.command(name="purge")
+@is_admin_or_owner()
+async def purge_cmd(ctx, amount: int):
+
+    try:
+        if amount < 1:
+            return
+
+        if amount > 100:
+            amount = 100
+
+        await ctx.channel.purge(limit=amount + 1)
+
+        msg = await ctx.send(f"🧹 Deleted {amount} messages")
+        await msg.delete(delay=3)
+
+    except discord.Forbidden:
+        await ctx.send("❌ Missing Permissions (Manage Messages)")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
+# ==========================================
+# 📜 VERIFY BUTTON
 # ==========================================
 class VerifyView(discord.ui.View):
 
@@ -153,40 +210,7 @@ class RoleView(discord.ui.View):
             await interaction.response.send_message("Role added", ephemeral=True)
 
 # ==========================================
-# ⏱️ TIMEOUT (FIXED + 1 MESSAGE ONLY)
-# ==========================================
-@bot.command(name="timeout")
-@is_admin_or_owner()
-async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No reason"):
-
-    try:
-        until = discord.utils.utcnow() + datetime.timedelta(seconds=seconds)
-
-        await member.timeout(until, reason=reason)
-
-        await ctx.send(
-            f"⏱️ {member.mention} timed out for **{seconds}s**"
-        )
-
-    except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions")
-
-    except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
-
-@bot.command(name="untimeout")
-@is_admin_or_owner()
-async def untimeout_cmd(ctx, member: discord.Member):
-
-    try:
-        await member.timeout(None)
-        await ctx.send(f"🔊 Timeout removed for {member.mention}")
-
-    except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
-
-# ==========================================
-# 🎬 MOVIE RATING
+# ⭐ RATING SYSTEM
 # ==========================================
 class RatingView(discord.ui.View):
 
@@ -265,7 +289,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
 # ==========================================
-# START
+# START BOT
 # ==========================================
 if __name__ == "__main__":
     keep_alive()
