@@ -9,6 +9,8 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# HIER DEINE IDS ANPASSEN!
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379  
 
@@ -116,51 +118,55 @@ async def on_member_join(member):
         await channel.send(embed=embed)
 
 # ==========================================
-# ALTER COMMAND MIT ABSOLUTER OWNER-SPERRE
+# OWNER PREFIX COMMANDS (NUR FÜR DICH!)
 # ==========================================
 @bot.command(name="purge")
 async def old_purge(ctx, amount: int):
-    # Radikaler Check: Wenn der Schreiber NICHT der Server-Gründer ist, bricht alles SOFORT ab
     if ctx.author.id != ctx.guild.owner_id:
-        try:
-            await ctx.message.delete() # Löscht das unberechtigte "!purge" des Users
-        except:
-            pass
-        return # Schmeißt den User raus. Keine Fehlermeldung, kein Löschen, absolute Stille!
+        try: await ctx.message.delete()
+        except: pass
+        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        return
 
-    # Ab hier läuft der Code NUR NOCH FÜR DICH (den Owner)
     if amount > 100: amount = 100
     if amount < 1: return
-
     try:
         await ctx.message.delete()
-        deleted = await ctx.channel.purge(limit=amount)
-    except Exception as e: 
-        print(f"Purge Fehler: {e}")
+        await ctx.channel.purge(limit=amount)
+    except Exception as e: print(f"Purge Fehler: {e}")
 
-# ==========================================
-# WEITERE ADMINTASKS ALS SLASH-COMMANDS
-# ==========================================
-@bot.tree.command(name="setup_rules", description="Erstellt das Regel-Embed")
-@app_commands.default_permissions(administrator=True)
-async def setup_rules_slash(interaction: discord.Interaction):
+@bot.command(name="setup_rules")
+async def setup_rules(ctx):
+    if ctx.author.id != ctx.guild.owner_id:
+        try: await ctx.message.delete()
+        except: pass
+        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        return
+
+    try: await ctx.message.delete()
+    except: pass
     embed = discord.Embed(
         title="📜 Server Rules & Verification",
         description="1️⃣ Be respectful.\n2️⃣ No spoilers.\n3️⃣ Stay on topic.\n\nKlicke unten zum Verifizieren!",
         color=discord.Color.green()
     )
-    await interaction.response.send_message("Sende...", ephemeral=True)
-    await interaction.channel.send(embed=embed, view=AcceptRulesView())
+    await ctx.send(embed=embed, view=AcceptRulesView())
 
-@bot.tree.command(name="setup_roles", description="Erstellt das Rollen-Embed")
-@app_commands.default_permissions(administrator=True)
-async def setup_roles_slash(interaction: discord.Interaction):
+@bot.command(name="setup_roles")
+async def setup_roles(ctx):
+    if ctx.author.id != ctx.guild.owner_id:
+        try: await ctx.message.delete()
+        except: pass
+        await ctx.send(f"❌ {ctx.author.mention}, du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        return
+
+    try: await ctx.message.delete()
+    except: pass
     embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Wähle deine Genres aus:", color=discord.Color.cyan())
-    await interaction.response.send_message("Sende...", ephemeral=True)
-    await interaction.channel.send(embed=embed, view=RoleToggleView())
+    await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
-# FILMSUCHE & BEWERTUNGEN
+# FILMSUCHE & BEWERTUNGEN (SLASH-COMMAND)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
