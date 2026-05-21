@@ -135,7 +135,7 @@ async def on_ready():
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if channel:
-        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.cyan())
+        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.teal())
         await channel.send(embed=embed)
 
 @bot.event
@@ -226,7 +226,7 @@ async def setup_rules_cmd(ctx):
 async def setup_roles_cmd(ctx):
     try: await ctx.message.delete()
     except: pass
-    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Select your preferred genres below:", color=discord.Color.cyan())
+    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Select your preferred genres below:", color=discord.Color.teal())
     await ctx.send(embed=embed, view=RoleToggleView())
 
 # ==========================================
@@ -302,7 +302,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
         cursor.close()
         conn.close()
 
-        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.cyan())
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.teal())
         embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
         embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
