@@ -240,7 +240,16 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
-        return [app_commands.Choice(name=m["title"], value=m["title"]) for m in data.get("results", [])[:5] if m.get("title")]
+        choices = []
+        for m in data.get("results", [])[:5]:
+            if m.get("title"):
+                # Extract year from release_date (format is YYYY-MM-DD)
+                year = m.get("release_date", "")[:4]
+                year_str = f" ({year})" if year else ""
+                
+                # Show "Title (Year)" in the dropdown, but keep the value as just the "Title"
+                choices.append(app_commands.Choice(name=f"{m['title']}{year_str}", value=m["title"]))
+        return choices
     except: return []
 
 class RatingView(discord.ui.View):
