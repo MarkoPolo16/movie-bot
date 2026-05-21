@@ -4,7 +4,6 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
-import re
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -323,25 +322,6 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
-
-
-# Füge 'import re' ganz oben bei deinen Imports hinzu!
-
-# In den Befehlen search / film_info dann diese Änderung:
-async def search(interaction: discord.Interaction, movie_name: str):
-    await interaction.response.defer(ephemeral=True)
-    # Entfernt das Jahr aus dem String für die API
-    clean_name = re.sub(r'\s\(\d{4}\)$', '', movie_name)
-    # Extrahiert das Jahr, das du gewählt hast
-    year_match = re.search(r'\((\d{4})\)', movie_name)
-    target_year = year_match.group(1) if year_match else None
-
-    data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={clean_name}").json()
-    
-    # Sucht in den Ergebnissen nach dem Film mit dem korrekten Jahr
-    movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
-    
-    # ... ab hier geht dein Code mit dem 'movie'-Objekt normal weiter
 
 @bot.tree.command(name="film", description="Show movie information for all")
 @app_commands.describe(movie_name="Name of the Movie")
