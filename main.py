@@ -338,8 +338,8 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
-@bot.tree.command(name="topliste", description="Zeigt die Top 10 Bewerter")
-async def topliste(interaction: discord.Interaction):
+@bot.tree.command(name="toplist", description="Showing the top 10 reviewers")
+async def toplist(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
