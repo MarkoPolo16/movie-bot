@@ -42,12 +42,12 @@ def keep_alive():
 # --- Views ---
 class RulesView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="rules_btn")
+    @discord.ui.button(label="✅ Accept Rules & Enter Cinema", style=discord.ButtonStyle.success, custom_id="rules_btn")
     async def verify(self, i: discord.Interaction, b: discord.ui.Button):
         role = i.guild.get_role(CINEPHILE_ROLE_ID)
         if role: 
             await i.user.add_roles(role)
-            await i.response.send_message("✅ Role added!", ephemeral=True)
+            await i.response.send_message("✅ Welcome to the community!", ephemeral=True)
 
 class GenreButtonView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
@@ -70,18 +70,30 @@ class GenreButtonView(discord.ui.View):
     @discord.ui.button(label="Drama", style=discord.ButtonStyle.primary, custom_id="btn_dra")
     async def b4(self, i, b): await self.toggle(i, 1506300696142544926)
 
-# --- Commands ---
+# --- Admin Commands ---
 @bot.command()
 @is_admin()
 async def setup_rules(ctx): 
-    await ctx.channel.purge(limit=10) # Optional: räumt alten Müll auf
-    await ctx.send("📜 **Accept the rules:**", view=RulesView())
+    await ctx.channel.purge(limit=10)
+    embed = discord.Embed(
+        title="🎬 Welcome to the Cinema Community!",
+        description=(
+            "**Server Rules:**\n"
+            "1. **Respect:** Treat everyone with kindness.\n"
+            "2. **Content:** Keep discussions related to movies and series.\n"
+            "3. **Language:** No hate speech, harassment, or toxic behavior.\n"
+            "4. **Spam:** Do not spam channels or mention users excessively.\n\n"
+            "By clicking the button below, you accept these rules and gain access."
+        ),
+        color=CYAN
+    )
+    await ctx.send(embed=embed, view=RulesView())
 
 @bot.command()
 @is_admin()
 async def setup_roles(ctx): 
-    await ctx.channel.purge(limit=10) # WICHTIG: Löscht alte Duplikate
-    await ctx.send("🎭 **Select your genres:**", view=GenreButtonView())
+    await ctx.channel.purge(limit=10)
+    await ctx.send("🎭 **Pick your favorite genres:**", view=GenreButtonView())
 
 @bot.command()
 @is_admin()
@@ -104,11 +116,10 @@ async def search(i: discord.Interaction, movie_name: str):
 
 @bot.event
 async def on_ready():
-    # Views nur EINMAL hinzufügen
     bot.add_view(RulesView())
     bot.add_view(GenreButtonView())
     await bot.tree.sync()
-    print("Bot is ready.")
+    print("Bot is fully operational.")
 
 if __name__ == "__main__":
     keep_alive()
