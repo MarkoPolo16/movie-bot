@@ -1,8 +1,4 @@
-import os
-import discord
-import requests
-import psycopg2
-import datetime
+import os, discord, requests, psycopg2, logging, datetime
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -10,119 +6,305 @@ from flask import Flask
 from threading import Thread
 
 load_dotenv()
-
 TOKEN = os.getenv("DISCORD_TOKEN")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
-CYAN = discord.Color.from_rgb(0, 255, 255)
 
-# IDs
-CINEPHILE_ROLE_ID = 1506242963318243379
+# ==========================================
+# SECTION: CONFIG & IDS (ADJUST HERE!)
+# ==========================================
+WELCOME_CHANNEL_ID = 1506237698304774215
+VERIFY_ROLE_ID = 1506242963318243379  
+
+# List of allowed Admin IDs (In addition to the Server Owner)
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
+GENRE_ROLES = {
+    "👻 Horror Fan": "👻 Horror Fan",
+    "💥 Action Fan": "💥 Action Fan",
+    "🚀 Sci-Fi Fan": "🚀 Sci-Fi Fan",
+    "🎭 Drama Fan": "🎭 Drama Fan"
+}
+
+# ==========================================
+# WEBSERVER (KEEPS BOT ONLINE)
+# ==========================================
+app = Flask('')
+@app.route('/')
+def home(): return "CinemaBot is online!"
+
+def run_web():
+    log = logging.getLogger('wsgi')
+    log.setLevel(logging.ERROR)
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 10000)))
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+
+# ==========================================
+# BOT CONFIG
+# ==========================================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Datenbank ---
 def init_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS ratings (user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id))")
-    conn.commit(); cur.close(); conn.close()
+    if not DATABASE_URL: return
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ratings (
+            user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id)
+        )""")
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e: print(f"DB Error: {e}")
+
 init_db()
 
-# --- Views (GUI) ---
-class RulesView(discord.ui.View):
+# ==========================================
+# PERMISSION CHECKS (SECURITY WALLS)
+# ==========================================
+def is_owner():
+    async def predicate(ctx):
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        raise commands.CheckFailure("ONLY_OWNER")
+    return commands.check(predicate)
+
+def is_admin_or_owner():
+    async def predicate(ctx):
+        if ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS:
+            return True
+        raise commands.CheckFailure("NO_PERMISSION")
+    return commands.check(predicate)
+
+# ==========================================
+# BUTTON MENUS (RULES & GENRES)
+# ==========================================
+class AcceptRulesView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success, custom_id="rules_btn")
-    async def verify(self, i, b):
-        role = i.guild.get_role(CINEPHILE_ROLE_ID)
-        await i.user.add_roles(role)
-        await i.response.send_message("✅ Welcome!", ephemeral=True)
+    @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="accept_rules_btn")
+    async def accept_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
+        role = interaction.guild.get_role(VERIFY_ROLE_ID)
+        if not role: return await interaction.response.send_message("❌ Role not found!", ephemeral=True)
+        if role in interaction.user.roles:
+            await interaction.response.send_message("ℹ️ You already have this role!", ephemeral=True)
+        else:
+            try:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(f"🎉 Role **{role.name}** assigned! 🍿", ephemeral=True)
+            except:
+                await interaction.response.send_message("❌ Move the Bot role higher up in the server settings!", ephemeral=True)
 
-class GenreButtonView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    async def toggle(self, i, rid):
-        role = i.guild.get_role(rid)
-        if role in i.user.roles: await i.user.remove_roles(role); await i.response.send_message("Removed", ephemeral=True)
-        else: await i.user.add_roles(role); await i.response.send_message("Added", ephemeral=True)
-    
-    @discord.ui.button(label="Horror", style=discord.ButtonStyle.primary, custom_id="h")
-    async def b1(self, i, b): await self.toggle(i, 1506300505226346608)
-    @discord.ui.button(label="Action", style=discord.ButtonStyle.primary, custom_id="a")
-    async def b2(self, i, b): await self.toggle(i, 1506300602773147749)
-    @discord.ui.button(label="Sci-Fi", style=discord.ButtonStyle.primary, custom_id="s")
-    async def b3(self, i, b): await self.toggle(i, 1506300638987030599)
-    @discord.ui.button(label="Drama", style=discord.ButtonStyle.primary, custom_id="d")
-    async def b4(self, i, b): await self.toggle(i, 1506300696142544926)
+class RoleButton(discord.ui.Button):
+    def __init__(self, label: str): super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"role_{label}")
+    async def callback(self, interaction: discord.Interaction):
+        role_name = GENRE_ROLES.get(self.label)
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role: return await interaction.response.send_message("❌ Role is missing on this server.", ephemeral=True)
+        try:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message(f"🎭 Role **{role_name}** removed.", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(f"🎉 Role **{role_name}** granted!", ephemeral=True)
+        except: await interaction.response.send_message("❌ Bot is missing permissions.", ephemeral=True)
 
-class RatingButtons(discord.ui.View):
-    def __init__(self, m_id, m_title):
-        super().__init__(timeout=60)
-        self.m_id, self.m_title = m_id, m_title
+class RoleToggleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for label in GENRE_ROLES.keys(): self.add_item(RoleButton(label))
 
-    async def save(self, i, rating):
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s) ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating", 
-                    (str(i.user.id), self.m_id, self.m_title, rating))
-        conn.commit(); cur.close(); conn.close()
-        await i.response.send_message(f"✅ Bewertet mit **{rating} ⭐**", ephemeral=True)
-
-    @discord.ui.button(label="1 ⭐", style=discord.ButtonStyle.secondary)
-    async def b1(self, i, b): await self.save(i, 1.0)
-    @discord.ui.button(label="2 ⭐", style=discord.ButtonStyle.secondary)
-    async def b2(self, i, b): await self.save(i, 2.0)
-    @discord.ui.button(label="3 ⭐", style=discord.ButtonStyle.secondary)
-    async def b3(self, i, b): await self.save(i, 3.0)
-    @discord.ui.button(label="4 ⭐", style=discord.ButtonStyle.secondary)
-    async def b4(self, i, b): await self.save(i, 4.0)
-    @discord.ui.button(label="5 ⭐", style=discord.ButtonStyle.success)
-    async def b5(self, i, b): await self.save(i, 5.0)
-
-# --- Commands ---
-@bot.tree.command(name="search")
-async def search(i: discord.Interaction, movie_name: str):
-    await i.response.defer()
-    res = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
-    if not res.get("results"): return await i.followup.send("❌ Nicht gefunden.")
-    m = res["results"][0]
-    
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (m["id"],))
-    avg = round(cur.fetchone()[0] or 0.0, 1)
-    cur.close(); conn.close()
-
-    embed = discord.Embed(title=f"🎬 {m['title']} ({m.get('release_date', 'N/A')[:4]})", description=m.get("overview")[:200], color=CYAN)
-    embed.add_field(name="⭐ Server Average", value=f"{avg}/5", inline=True)
-    if m.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{m['poster_path']}")
-    
-    await i.followup.send(embed=embed, view=RatingButtons(m["id"], m["title"]))
-
-@bot.command()
-async def purge(ctx, amount: int):
-    if ctx.author.id in ALLOWED_ADMIN_IDS: await ctx.channel.purge(limit=amount + 1)
-
-@bot.command()
-async def timeout(ctx, member: discord.Member, mins: int):
-    if ctx.author.id in ALLOWED_ADMIN_IDS:
-        await member.timeout(datetime.timedelta(minutes=mins))
-        await ctx.send(f"⏱️ {member.name} timed out.")
-
-@bot.command()
-async def setup_rules(ctx): await ctx.send("📜 Rules:", view=RulesView())
-@bot.command()
-async def setup_roles(ctx): await ctx.send("🎭 Genres:", view=GenreButtonView())
-
+# ==========================================
+# EVENTS & GLOBAL COMMAND ERROR HANDLER
+# ==========================================
 @bot.event
 async def on_ready():
-    bot.add_view(RulesView()); bot.add_view(GenreButtonView())
+    bot.add_view(AcceptRulesView())
+    bot.add_view(RoleToggleView())
     await bot.tree.sync()
-    print("Bot ready.")
+    print(f"🎬 {bot.user} is ready!")
+
+@bot.event
+async def on_member_join(member):
+    channel = bot.get_channel(WELCOME_CHANNEL_ID)
+    if channel:
+        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.cyan())
+        await channel.send(embed=embed)
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        try: await ctx.message.delete()
+        except: pass
+        
+        msg = "you do not have permission to execute this command!"
+        if str(error) == "ONLY_OWNER":
+            msg = "this command is strictly restricted to the Server Owner!"
+            
+        await ctx.send(f"{ctx.author.mention}, ❌ {msg}", delete_after=5)
+        return
+
+# ==========================================
+# SECTION: ADMIN & OWNER COMMANDS (Moderation)
+# ==========================================
+@bot.command(name="purge")
+@is_admin_or_owner()
+async def purge_cmd(ctx, amount: int):
+    if amount > 100: amount = 100
+    if amount < 1: return
+    try:
+        await ctx.message.delete()
+        await ctx.channel.purge(limit=amount)
+    except Exception as e: print(f"Purge Error: {e}")
+
+@bot.command(name="timeout")
+@is_admin_or_owner()
+async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str = "No reason provided"):
+    try:
+        await ctx.message.delete()
+        duration = datetime.timedelta(seconds=seconds)
+        await member.timeout(duration, reason=reason)
+        await ctx.send(f"⏱️ **{member.mention}** has been timed out for **{seconds} seconds**. Reason: {reason}", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Error applying timeout: {e}", delete_after=5)
+
+@bot.command(name="untimeout")
+@is_admin_or_owner()
+async def untimeout_cmd(ctx, member: discord.Member):
+    try:
+        await ctx.message.delete()
+        await member.timeout(None, reason="Timeout removed early")
+        await ctx.send(f"🔊 The timeout for **{member.mention}** has been removed early!", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Error removing timeout: {e}", delete_after=5)
+
+@bot.command(name="ban")
+@is_admin_or_owner()
+async def ban_cmd(ctx, member: discord.Member, *, reason: str = "No reason provided"):
+    try:
+        await ctx.message.delete()
+        await member.ban(reason=reason)
+        await ctx.send(f"🔨 **{member.name}** was permanently banned from the server. Reason: {reason}", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Error banning member: {e}", delete_after=5)
+
+@bot.command(name="unban")
+@is_admin_or_owner()
+async def unban_cmd(ctx, user_id: str):
+    try:
+        await ctx.message.delete()
+        user = await bot.fetch_user(int(user_id))
+        await ctx.guild.unban(user)
+        await ctx.send(f"🕊️ **{user.name}** has been successfully unbanned and can rejoin the server!", delete_after=10)
+    except Exception as e:
+        await ctx.send(f"❌ Error unbanning (Is the ID correct?): {e}", delete_after=5)
+
+# ==========================================
+# SECTION: STRICT OWNER COMMANDS (Setups)
+# ==========================================
+@bot.command(name="setup_rules")
+@is_owner()
+async def setup_rules_cmd(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    embed = discord.Embed(
+        title="📜 Server Rules & Verification",
+        description="1️⃣ Be respectful.\n2️⃣ No spoilers.\n3️⃣ Stay on topic.\n\nClick below to verify!",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed, view=AcceptRulesView())
+
+@bot.command(name="setup_roles")
+@is_owner()
+async def setup_roles_cmd(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    embed = discord.Embed(title="🎭 Choose your Movie Genres!", description="Select your preferred genres below:", color=discord.Color.cyan())
+    await ctx.send(embed=embed, view=RoleToggleView())
+
+# ==========================================
+# MOVIE SEARCH & RATINGS (SLASH-COMMAND)
+# ==========================================
+async def movie_autocomplete(interaction: discord.Interaction, current: str):
+    if not current or not TMDB_API_KEY: return []
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
+        return [app_commands.Choice(name=m["title"], value=m["title"]) for m in data.get("results", [])[:5] if m.get("title")]
+    except: return []
+
+class RatingView(discord.ui.View):
+    def __init__(self, movie_id: int, movie_title: str):
+        super().__init__(timeout=120)
+        self.movie_id = movie_id
+        self.movie_title = movie_title
+
+    async def handle_rating(self, interaction, rating):
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
+            ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+            """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
+            conn.commit()
+            cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            avg = round(cursor.fetchone()[0] or 0.0, 1)
+            cursor.close()
+            conn.close()
+
+            embed = discord.Embed(title=f"🎬 {self.movie_title}", description="Rating saved successfully!", color=discord.Color.cyan())
+            embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
+            embed.add_field(name="👤 Your Rating", value=f"{rating}/5")
+            await interaction.response.edit_message(embed=embed, view=None)
+        except Exception as e: print(e)
+
+    @discord.ui.button(label="1⭐", style=discord.ButtonStyle.secondary)
+    async def b1(self, interaction, button): await self.handle_rating(interaction, 1.0)
+    @discord.ui.button(label="2⭐", style=discord.ButtonStyle.secondary)
+    async def b2(self, interaction, button): await self.handle_rating(interaction, 2.0)
+    @discord.ui.button(label="3⭐", style=discord.ButtonStyle.primary)
+    async def b3(self, interaction, button): await self.handle_rating(interaction, 3.0)
+    @discord.ui.button(label="4⭐", style=discord.ButtonStyle.success)
+    async def b4(self, interaction, button): await self.handle_rating(interaction, 4.0)
+    @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
+    async def b5(self, interaction, button): await self.handle_rating(interaction, 5.0)
+
+@bot.tree.command(name="search", description="Search and rate movies")
+@app_commands.describe(movie_name="Name of the movie")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
+async def search(interaction: discord.Interaction, movie_name: str):
+    await interaction.response.defer()
+    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.")
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}").json()
+        if not data.get("results"): return await interaction.followup.send("No movies found.")
+        movie = data["results"][0]
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT AVG(rating) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        avg = round(cursor.fetchone()[0] or 0.0, 1)
+        cursor.execute("SELECT rating FROM ratings WHERE movie_id=%s AND user_id=%s", (movie["id"], str(interaction.user.id)))
+        user_rating = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie['overview'][:1000], color=discord.Color.cyan())
+        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5")
+        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
+        if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
+        
+        await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]))
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 if __name__ == "__main__":
-    Thread(target=lambda: Flask(__name__).run(host="0.0.0.0", port=10000), daemon=True).start()
-    bot.run(TOKEN)
+    keep_alive()
+    if TOKEN: bot.run(TOKEN)
