@@ -21,8 +21,8 @@ WELCOME_CHANNEL_ID = 1506237698304774215
 ROLES_CHANNEL_ID = 1506237765526880287
 RULES_CHANNEL_ID = 1506237765526880287
 
-# Rollen-Konfigurationen (Exakt angepasst!)
-VERIFY_ROLE_NAME = "🍿 Cinephile"
+# Rollen-Konfigurationen über Direkt-IDs & Namen
+VERIFY_ROLE_ID = 1506242963318243379  # <-- Cinephile Rolle per ID!
 
 GENRE_ROLES = {
     "👻 Horror Fan": "👻 Horror Fan",
@@ -103,9 +103,10 @@ class AcceptRulesView(discord.ui.View):
         if not guild:
             return
 
-        role = discord.utils.get(guild.roles, name=VERIFY_ROLE_NAME)
+        # Holt die Rolle jetzt sicher über die ID
+        role = guild.get_role(VERIFY_ROLE_ID)
         if not role:
-            await interaction.response.send_message(f"❌ Die Rolle `{VERIFY_ROLE_NAME}` wurde auf dem Server nicht gefunden! Bitte stelle sicher, dass sie exakt so in den Server-Einstellungen geschrieben steht (inklusive Popcorn-Emoji).", ephemeral=True)
+            await interaction.response.send_message("❌ Die Cinephile-Rolle wurde mit dieser ID auf dem Server nicht gefunden! Bitte prüfe, ob die ID stimmt.", ephemeral=True)
             return
 
         member = interaction.user
@@ -113,7 +114,7 @@ class AcceptRulesView(discord.ui.View):
             await interaction.response.send_message("ℹ️ Du hast die Regeln bereits akzeptiert und besitzt die Rolle schon!", ephemeral=True)
         else:
             await member.add_roles(role)
-            await interaction.response.send_message(f"🎉 Danke! Du hast die Regeln akzeptiert und die Rolle **{VERIFY_ROLE_NAME}** erhalten. Viel Spaß auf dem Server! 🍿", ephemeral=True)
+            await interaction.response.send_message(f"🎉 Danke! Du hast die Regeln akzeptiert und die Rolle **{role.name}** erhalten. Viel Spaß auf dem Server! 🍿", ephemeral=True)
 
 # ==========================================
 # INTERAKTIVE BUTTONS FÜR ROLLEN-AUSWAHL
@@ -154,7 +155,6 @@ class RoleToggleView(discord.ui.View):
 # ==========================================
 @bot.event
 async def on_ready():
-    # Beide Menüs müssen beim Start registriert werden, damit sie ewig funktionieren
     bot.add_view(RoleToggleView())
     bot.add_view(AcceptRulesView())
     await bot.tree.sync()
@@ -222,7 +222,7 @@ async def setup_rules(ctx):
         ),
         color=discord.Color.from_rgb(0, 255, 0)
     )
-    embed.set_footer(text="Click below to get the '🍿 Cinephile' role")
+    embed.set_footer(text="Click below to get verified")
     
     await ctx.send(embed=embed, view=AcceptRulesView())
 
@@ -367,16 +367,3 @@ class RatingView(discord.ui.View):
     async def b45(self, interaction, button): await self.handle(interaction, 4.5)
     @discord.ui.button(label="5⭐", style=discord.ButtonStyle.success)
     async def b5(self, interaction, button): await self.handle(interaction, 5.0)
-
-# ==========================================
-# APPLIKATIONS-STARTPUNKT
-# ==========================================
-if __name__ == "__main__":
-    print("⏳ Starting Flask web server context for Render...")
-    keep_alive()
-    
-    print("⏳ Connecting client context to Discord gateway...")
-    if TOKEN:
-        bot.run(TOKEN)
-    else:
-        print("❌ CRITICAL ERROR: DISCORD_TOKEN is missing in Environment variables!")
