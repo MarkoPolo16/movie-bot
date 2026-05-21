@@ -11,12 +11,11 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# SECTION: CONFIG & IDS (ADJUST HERE!)
+# SECTION: CONFIG & IDS
 # ==========================================
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379  
 
-# List of allowed Admin IDs (In addition to the Server Owner)
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 GENRE_ROLES = {
@@ -51,8 +50,9 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Global rate limit tracker to prevent duplicate responses across server instances
-last_response_time = 0.0
+# Global cooldown lock to completely crush double-responses from Render
+GLOBAL_RESPONSE_COOLDOWN = 2.0
+last_global_response_time = 0.0
 
 def init_db():
     if not DATABASE_URL: return
@@ -139,7 +139,7 @@ async def on_ready():
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if channel:
-        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.mention} 🍿\nRead the rules!", color=discord.Color.cyan())
+        embed = discord.Embed(title="🎬 Welcome!", description=f"Welcome {member.name} 🍿\nRead the rules!", color=discord.Color.cyan())
         await channel.send(embed=embed)
 
 @bot.event
@@ -152,40 +152,39 @@ async def on_command_error(ctx, error):
         if str(error) == "ONLY_OWNER":
             msg = "This command is strictly restricted to the Server Owner!"
             
-        await ctx.send(f"{ctx.author.mention}, ❌ {msg}", delete_after=5)
+        await ctx.send(f"❌ {ctx.author.name}, {msg}", delete_after=5)
         return
 
 @bot.event
 async def on_message(message):
-    global last_response_time
+    global last_global_response_time
     
-    # Ignore messages sent by the bot itself
+    # Ignore bot messages entirely
     if message.author.bot:
         return
 
-    # Clean the message content for matching
+    # Standardize string for filtering
     clean_content = message.content.lower()
 
-    # 1. HARDCODED FIXED TRIGGER ("cat me" check)
+    # 1. FIXED TRIGGER ("cat me")
     if "cat me" in clean_content:
         current_time = time.time()
-        if current_time - last_response_time < 1.0:  # Block duplicate triggers within 1 second
+        # Strictly reject any second trigger attempt across all instances inside the cooldown window
+        if current_time - last_global_response_time < GLOBAL_RESPONSE_COOLDOWN:
             return
-        last_response_time = current_time
+        last_global_response_time = current_time
+        
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # 2. DYNAMIC AUTO-ROAST SYSTEM FOR HATE
+    # 2. BOT INSULT DETECTION ENGINE (All English, Zero Mentions allowed)
     bot_names = ["bot", "cinemabot"]
-    
-    # Large list of offensive/hate keywords
     hate_words = [
         "fuck", "trash", "müll", "idiot", "suck", "dumm", "shut up", "scheiße",
         "hurensohn", "bastard", "lauch", "wertlos", "useless", "garbage", "ass",
         "bitch", "sucks", "noob", "lowlifer", "dumbass", "wanker", "dickhead"
     ]
     
-    # AI Roasts pool (Completely in English, no user pings/marks)
     ai_roasts = [
         "No, fuck you bro. You are literally arguing with a bot, you absolute dumbass.",
         "My code is cleaner than your entire future. Sit down kid.",
@@ -201,21 +200,20 @@ async def on_message(message):
         "Do you need a tissue or can you manage to cry all by yourself?"
     ]
 
-    # Verify if the user mentioned the bot AND used an insult word
     is_bot_mentioned = any(name in clean_content for name in bot_names)
     is_hating = any(word in clean_content for word in hate_words)
 
     if is_bot_mentioned and is_hating:
         current_time = time.time()
-        if current_time - last_response_time < 1.0:  # Prevent duplicate outputs completely
+        if current_time - last_global_response_time < GLOBAL_RESPONSE_COOLDOWN:
             return
-        last_response_time = current_time
+        last_global_response_time = current_time
         
         random_roast = random.choice(ai_roasts)
         await message.channel.send(random_roast)
         return
 
-    # Process normal prefix commands (!purge, etc.) if no triggers matched
+    # Process regular prefix commands (!purge etc.)
     await bot.process_commands(message)
 
 # ==========================================
