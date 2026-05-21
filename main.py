@@ -349,30 +349,36 @@ async def purge_cmd(ctx, amount: int):
 async def timeout_cmd(
     ctx,
     member: discord.Member,
-    seconds: int,
+    minutes: int,
     *,
     reason: str = "No reason provided"
 ):
 
     try:
 
-        duration = datetime.timedelta(seconds=seconds)
+        duration = datetime.timedelta(minutes=minutes)
 
-        await member.timeout(
+        await member.timeout_for(
             duration,
             reason=reason
         )
 
-        await ctx.send(
-            f"⏱️ {member.mention} has been timed out for {seconds} seconds.",
-            delete_after=10
+        embed = discord.Embed(
+            title="⏱️ Member Timed Out",
+            description=(
+                f"{member.mention} has been timed out.\n\n"
+                f"⏳ Duration: {minutes} minute(s)\n"
+                f"📝 Reason: {reason}"
+            ),
+            color=CYAN
         )
+
+        await ctx.send(embed=embed)
 
     except Exception as e:
 
         await ctx.send(
-            f"❌ Error: {e}",
-            delete_after=5
+            f"❌ Timeout Error: {e}"
         )
 
 # ==========================================
@@ -384,21 +390,22 @@ async def untimeout_cmd(ctx, member: discord.Member):
 
     try:
 
-        await member.timeout(
-            None,
-            reason="Timeout removed"
+        await member.edit(
+            timed_out_until=None
         )
 
-        await ctx.send(
-            f"✅ Timeout removed from {member.mention}",
-            delete_after=10
+        embed = discord.Embed(
+            title="✅ Timeout Removed",
+            description=f"{member.mention} can talk again.",
+            color=CYAN
         )
+
+        await ctx.send(embed=embed)
 
     except Exception as e:
 
         await ctx.send(
-            f"❌ Error: {e}",
-            delete_after=5
+            f"❌ Untimeout Error: {e}"
         )
 
 # ==========================================
