@@ -20,11 +20,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 WELCOME_CHANNEL_ID = 1506237698304774215
 
-# Die feste ID für deine Cinephile-Rolle
+# Die feste ID für deine Cinephile-Rolle (Wird für Admin-Befehle blockiert!)
 VERIFY_ROLE_ID = 1506242963318243379  
-
-# ERLAUBTE ADMIN-ID LISTE
-ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
 # Rollen-Namen für das Genre-Menü
 GENRE_ROLES = {
@@ -45,7 +42,6 @@ def home():
 
 def run_web():
     port = int(os.getenv("PORT", 10000))
-    # Schaltet die Flask-Produktionswarnung im Log stumm
     log = logging.getLogger('wsgi')
     log.setLevel(logging.ERROR)
     app.run(host='0.0.0.0', port=port)
@@ -97,21 +93,24 @@ def init_db():
 init_db()
 
 # ==========================================
-# RECHTE-CHECK (Die unüberwindbare Mauer)
+# RECHTE-CHECK (Sicheres Rollen- & Owner-basiertes System)
 # ==========================================
 def is_admin_or_allowed():
     async def predicate(ctx):
-        # 1. Ist er der Server-Besitzer?
+        # 1. Ist es der Server-Besitzer? -> Immer erlauben!
         if ctx.author.id == ctx.guild.owner_id:
             return True
-        # 2. Hat er Admin-Rechte in Discord?
+            
+        # 2. Hat der User die Cinephile-Rolle? -> Strikt BLOCKIEREN!
+        cinephile_role = ctx.guild.get_role(VERIFY_ROLE_ID)
+        if cinephile_role and cinephile_role in ctx.author.roles:
+            raise commands.CheckFailure("NO_PERMISSION")
+
+        # 3. Hat der User echte Administrator-Rechte im Discord Server? -> Erlauben!
         if ctx.author.guild_permissions.administrator:
             return True
-        # 3. Steht seine ID in der erlaubten Liste?
-        if ctx.author.id in ALLOWED_ADMIN_IDS:
-            return True
         
-        # Wenn nichts zutrifft: Fehler werfen!
+        # Wenn keine Admin-Rechte vorliegen: Blockieren
         raise commands.CheckFailure("NO_PERMISSION")
     return commands.check(predicate)
 
@@ -211,7 +210,6 @@ async def on_message(message):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
-        # Löscht nur die geschriebene !purge Nachricht des unberechtigten Users
         try:
             await ctx.message.delete()
         except:
@@ -224,7 +222,7 @@ async def on_command_error(ctx, error):
 # SPERRE FÜR ADMIN PREFIX COMMANDS
 # ==========================================
 @bot.command()
-@is_admin_or_allowed() # Blockiert den Befehl sofort, wenn die Rechte fehlen!
+@is_admin_or_allowed() 
 async def purge(ctx, amount: int):
     if amount > 100:
         amount = 100
