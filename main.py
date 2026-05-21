@@ -189,12 +189,13 @@ async def on_message(message):
 # ==========================================
 @bot.command()
 async def purge(ctx, amount: int):
-    # Prüft, ob der User in der Erlaubt-Liste steht
+    # 1. ERST PRÜFEN: Ist der User berechtigt?
     if ctx.author.id not in ALLOWED_ADMIN_IDS:
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         await ctx.message.delete()
-        return
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
+        return  # HIER WIRD SOFORT ABGEBROCHEN! Nichts wird gelöscht.
 
+    # 2. ERST WENN DIE ID STIMMT, WIRD GELÖSCHT
     if amount > 100:
         amount = 100
     if amount < 1:
@@ -212,10 +213,9 @@ async def purge(ctx, amount: int):
 @bot.command()
 async def setup_rules(ctx):
     """Erstellt das Regel-Embed mit dem Verifizierungs-Button"""
-    # Prüft, ob der User in der Erlaubt-Liste steht
     if ctx.author.id not in ALLOWED_ADMIN_IDS:
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         await ctx.message.delete()
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         return
 
     await ctx.message.delete()
@@ -240,10 +240,9 @@ async def setup_rules(ctx):
 @bot.command()
 async def setup_roles(ctx):
     """Erstellt das Genre-Rollen-Embed mit Auswahltasten"""
-    # Prüft, ob der User in der Erlaubt-Liste steht
     if ctx.author.id not in ALLOWED_ADMIN_IDS:
-        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         await ctx.message.delete()
+        await ctx.send("❌ Du hast keine Berechtigung, diesen Befehl auszuführen!", delete_after=5)
         return
 
     await ctx.message.delete()
