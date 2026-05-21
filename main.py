@@ -6,7 +6,6 @@ import logging
 import datetime
 
 from discord.ext import commands
-from discord import app_commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
@@ -34,10 +33,10 @@ ALLOWED_ADMIN_IDS = [
 ]
 
 GENRE_ROLES = {
-    "👻 Horror Fan": "👻 Horror Fan",
-    "💥 Action Fan": "💥 Action Fan",
-    "🚀 Sci-Fi Fan": "🚀 Sci-Fi Fan",
-    "🎭 Drama Fan": "🎭 Drama Fan"
+    "👻 Horror": "👻 Horror Fan",
+    "💥 Action": "💥 Action Fan",
+    "🚀 Sci-Fi": "🚀 Sci-Fi Fan",
+    "🎭 Drama": "🎭 Drama Fan"
 }
 
 # ==========================================
@@ -49,16 +48,13 @@ app = Flask('')
 def home():
     return "Bot online"
 
-def run_web():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
-
 def keep_alive():
-    t = Thread(target=run_web)
+    t = Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000))))
     t.daemon = True
     t.start()
 
 # ==========================================
-# BOT SETUP
+# BOT
 # ==========================================
 intents = discord.Intents.default()
 intents.members = True
@@ -67,16 +63,16 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ==========================================
-# DATABASE
+# DB
 # ==========================================
 def init_db():
     if not DATABASE_URL:
         return
 
     conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS ratings (
         user_id TEXT,
         movie_id INTEGER,
@@ -87,39 +83,77 @@ def init_db():
     """)
 
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
 
 init_db()
 
 # ==========================================
-# PERMISSIONS
+# PERMISSION CHECK
 # ==========================================
 def is_admin_or_owner():
     async def predicate(ctx):
-        return (
-            ctx.author.id == ctx.guild.owner_id
-            or ctx.author.id in ALLOWED_ADMIN_IDS
-        )
+        return ctx.author.id == ctx.guild.owner_id or ctx.author.id in ALLOWED_ADMIN_IDS
     return commands.check(predicate)
 
 # ==========================================
-# WELCOME
+# 👋 WELCOME
 # ==========================================
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
-
     if channel:
-        embed = discord.Embed(
-            title="🎬 Welcome!",
-            description=f"Welcome {member.mention} 🍿",
-            color=CYAN
+        await channel.send(
+            embed=discord.Embed(
+                title="🎬 Welcome!",
+                description=f"Welcome {member.mention} 🍿",
+                color=CYAN
+            )
         )
-        await channel.send(embed=embed)
 
 # ==========================================
-# TIMEOUT (SECONDS FIXED)
+# 📜 RULES + VERIFY
+# ==========================================
+class VerifyView(discord.ui.View):
+
+    @discord.ui.button(label="✅ Verify", style=discord.ButtonStyle.success)
+    async def verify(self, interaction, button):
+
+        role = interaction.guild.get_role(VERIFY_ROLE_ID)
+
+        if role in interaction.user.roles:
+            await interaction.response.send_message("Already verified.", ephemeral=True)
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("Verified!", ephemeral=True)
+
+# ==========================================
+# 🎭 GENRE ROLES
+# ==========================================
+class RoleView(discord.ui.View):
+
+    @discord.ui.select(
+        placeholder="Choose genre",
+        options=[
+            discord.SelectOption(label="Horror", value="👻 Horror Fan"),
+            discord.SelectOption(label="Action", value="💥 Action Fan"),
+            discord.SelectOption(label="Sci-Fi", value="🚀 Sci-Fi Fan"),
+            discord.SelectOption(label="Drama", value="🎭 Drama Fan"),
+        ]
+    )
+    async def select(self, interaction, select):
+
+        role = discord.utils.get(interaction.guild.roles, name=select.values[0])
+
+        if role in interaction.user.roles:
+            await interaction.user.remove_roles(role)
+            await interaction.response.send_message("Role removed", ephemeral=True)
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("Role added", ephemeral=True)
+
+# ==========================================
+# ⏱️ TIMEOUT (FIXED + 1 MESSAGE ONLY)
 # ==========================================
 @bot.command(name="timeout")
 @is_admin_or_owner()
@@ -135,7 +169,7 @@ async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason="No r
         )
 
     except discord.Forbidden:
-        await ctx.send("❌ Missing Permissions (role hierarchy / Moderate Members)")
+        await ctx.send("❌ Missing Permissions")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
@@ -146,13 +180,13 @@ async def untimeout_cmd(ctx, member: discord.Member):
 
     try:
         await member.timeout(None)
-        await ctx.send(f"✅ Timeout removed for {member.mention}")
+        await ctx.send(f"🔊 Timeout removed for {member.mention}")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
 
 # ==========================================
-# RATING SYSTEM
+# 🎬 MOVIE RATING
 # ==========================================
 class RatingView(discord.ui.View):
 
@@ -164,9 +198,9 @@ class RatingView(discord.ui.View):
     async def handle_rating(self, interaction, rating):
 
         conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
+        cur = conn.cursor()
 
-        cursor.execute("""
+        cur.execute("""
         INSERT INTO ratings (user_id, movie_id, movie_title, rating)
         VALUES (%s,%s,%s,%s)
         ON CONFLICT(user_id,movie_id)
@@ -179,7 +213,7 @@ class RatingView(discord.ui.View):
         ))
 
         conn.commit()
-        cursor.close()
+        cur.close()
         conn.close()
 
         await interaction.response.send_message(
@@ -206,7 +240,7 @@ class RatingView(discord.ui.View):
         await self.handle_rating(interaction, float(select.values[0]))
 
 # ==========================================
-# SEARCH MOVIES
+# 🎬 SEARCH
 # ==========================================
 @bot.tree.command(name="search")
 async def search(interaction: discord.Interaction, movie_name: str):
@@ -231,7 +265,7 @@ async def search(interaction: discord.Interaction, movie_name: str):
     )
 
 # ==========================================
-# START BOT
+# START
 # ==========================================
 if __name__ == "__main__":
     keep_alive()
