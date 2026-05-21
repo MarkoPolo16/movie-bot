@@ -169,7 +169,6 @@ async def on_message(message):
     # 1. FIXED TRIGGER ("cat me")
     if "cat me" in clean_content:
         current_time = time.time()
-        # Strictly reject any second trigger attempt across all instances inside the cooldown window
         if current_time - last_global_response_time < GLOBAL_RESPONSE_COOLDOWN:
             return
         last_global_response_time = current_time
@@ -177,12 +176,14 @@ async def on_message(message):
         await message.channel.send("Im not gonna meow bro")
         return
 
-    # 2. BOT INSULT DETECTION ENGINE (All English, Zero Mentions allowed)
+    # 2. BOT INSULT DETECTION ENGINE (Pure English, Zero Mentions allowed)
     bot_names = ["bot", "cinemabot"]
+    
+    # Fully English bad words / insult triggers
     hate_words = [
-        "fuck", "trash", "müll", "idiot", "suck", "dumm", "shut up", "scheiße",
-        "hurensohn", "bastard", "lauch", "wertlos", "useless", "garbage", "ass",
-        "bitch", "sucks", "noob", "lowlifer", "dumbass", "wanker", "dickhead"
+        "fuck", "trash", "idiot", "suck", "sucks", "shut up", "bastard", 
+        "useless", "garbage", "ass", "bitch", "noob", "lowlifer", "dumbass", 
+        "wanker", "dickhead", "crap", "horrible", "terrible", "worst", "clown"
     ]
     
     ai_roasts = [
