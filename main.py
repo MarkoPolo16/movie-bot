@@ -249,7 +249,6 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
         return choices
     except: return []
 
-# --- NEUE FUNKTION FÜR /dir AUTOCOMPLETE ---
 async def director_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
     try:
@@ -257,6 +256,17 @@ async def director_autocomplete(interaction: discord.Interaction, current: str):
         choices = []
         for p in data.get("results", [])[:5]:
             if p.get("known_for_department") == "Directing":
+                choices.append(app_commands.Choice(name=p['name'], value=p['name']))
+        return choices
+    except: return []
+
+async def actor_autocomplete(interaction: discord.Interaction, current: str):
+    if not current or not TMDB_API_KEY: return []
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/person?api_key={TMDB_API_KEY}&query={current}").json()
+        choices = []
+        for p in data.get("results", [])[:5]:
+            if p.get("known_for_department") == "Acting":
                 choices.append(app_commands.Choice(name=p['name'], value=p['name']))
         return choices
     except: return []
@@ -340,7 +350,6 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
-# --- NEUER /dir COMMAND ---
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
 @app_commands.autocomplete(name=director_autocomplete)
@@ -349,15 +358,43 @@ async def dir_info(interaction: discord.Interaction, name: str):
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/person?api_key={TMDB_API_KEY}&query={name}").json()
         if not data.get("results"): return await interaction.followup.send("Director not found.")
-        
         person = data["results"][0]
-        
         embed = discord.Embed(title=f"🎬 {person['name']}", color=CYAN)
         embed.add_field(name="Known for", value=person.get("known_for_department", "N/A"))
         embed.add_field(name="⭐ Rating", value="Coming soon! 🏗️")
-        if person.get("profile_path"): 
-            embed.set_image(url=f"https://image.tmdb.org/t/p/w500{person['profile_path']}")
-        
+        if person.get("profile_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{person['profile_path']}")
+        await interaction.followup.send(embed=embed)
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
+
+@bot.tree.command(name="actor", description="Search information about an actor")
+@app_commands.describe(name="Name of the actor")
+@app_commands.autocomplete(name=actor_autocomplete)
+async def actor_info(interaction: discord.Interaction, name: str):
+    await interaction.response.defer()
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/person?api_key={TMDB_API_KEY}&query={name}").json()
+        if not data.get("results"): return await interaction.followup.send("Actor not found.")
+        person = data["results"][0]
+        embed = discord.Embed(title=f"🎬 {person['name']}", color=CYAN)
+        embed.add_field(name="Known for", value=person.get("known_for_department", "N/A"))
+        embed.add_field(name="⭐ Rating", value="Coming soon! 🏗️")
+        if person.get("profile_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{person['profile_path']}")
+        await interaction.followup.send(embed=embed)
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
+
+@bot.tree.command(name="actress", description="Search information about an actress")
+@app_commands.describe(name="Name of the actress")
+@app_commands.autocomplete(name=actor_autocomplete)
+async def actress_info(interaction: discord.Interaction, name: str):
+    await interaction.response.defer()
+    try:
+        data = requests.get(f"https://api.themoviedb.org/3/search/person?api_key={TMDB_API_KEY}&query={name}").json()
+        if not data.get("results"): return await interaction.followup.send("Actress not found.")
+        person = data["results"][0]
+        embed = discord.Embed(title=f"🎬 {person['name']}", color=CYAN)
+        embed.add_field(name="Known for", value=person.get("known_for_department", "N/A"))
+        embed.add_field(name="⭐ Rating", value="Coming soon! 🏗️")
+        if person.get("profile_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{person['profile_path']}")
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
