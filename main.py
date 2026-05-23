@@ -4,6 +4,8 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
+from PIL import Image, ImageDraw, ImageFont # Neu für RankCard
+import io
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -14,11 +16,42 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 CYAN = discord.Color.from_rgb(0, 255, 255)
 
 # ==========================================
+# RANK CARD FUNKTION
+# ==========================================
+async def create_rank_card(member: discord.Member, level: int, xp: int):
+    # Lade das Hintergrundbild
+    bg = Image.open("level-bg.jpg").convert("RGBA").resize((800, 200))
+    
+    # 1. Box für den Hintergrund (leicht transparent)
+    overlay = Image.new('RGBA', (800, 200), (0, 0, 0, 120))
+    bg = Image.alpha_composite(bg, overlay)
+    draw = ImageDraw.Draw(bg)
+
+    # 2. Fortschrittsbalken
+    needed_xp = level * 100
+    progress = xp / needed_xp
+    bar_x1, bar_y1 = 200, 140
+    bar_x2, bar_y2 = 700, 170
+    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50)) # Hintergrund Balken
+    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255)) # Cyan Balken
+
+    # 3. Text (Name und Level)
+    draw.text((200, 40), f"{member.display_name}", fill=(255, 255, 255))
+    draw.text((200, 90), f"Level: {level} | XP: {xp}/{needed_xp}", fill=(255, 255, 255))
+
+    # Speichern
+    buffer = io.BytesIO()
+    bg.convert("RGB").save(buffer, format="PNG")
+    buffer.seek(0)
+    return discord.File(buffer, filename="rank.png")
+
+# ==========================================
 # SECTION: CONFIG & IDS (ADJUST HERE!)
 # ==========================================
 WELCOME_CHANNEL_ID = 1506237698304774215
 VERIFY_ROLE_ID = 1506242963318243379 
-LEVEL_LOG_CHANNEL_ID = 1507865213511274557 # HIER DEINE KANAL-ID FÜR LEVEL-LOGS EINTRAGEN
+LEVEL_LOG_CHANNEL_ID = 1507865213511274557
+RANK_CHANNEL_ID = 0000000000000000000 # HIER DEINE ID EINTRAGEN
 
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
@@ -152,7 +185,7 @@ async def on_message(message):
         cursor.execute("INSERT INTO levels (user_id, xp, level) VALUES (%s, %s, 1) ON CONFLICT(user_id) DO UPDATE SET xp = levels.xp + %s RETURNING xp, level", (str(message.author.id), xp_gain, xp_gain))
         xp, level = cursor.fetchone()
         
-        # Level Up Check (XP needed = level * 100)
+        # Level Up Check
         if xp >= level * 100:
             new_level = level + 1
             cursor.execute("UPDATE levels SET level = %s, xp = 0 WHERE user_id = %s", (new_level, str(message.author.id)))
@@ -383,6 +416,12 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
 @bot.tree.command(name="rank", description="Check your current level")
 async def rank(interaction: discord.Interaction):
+    # Kanalprüfung
+    if interaction.channel.id != RANK_CHANNEL_ID:
+        return await interaction.response.send_message(f"❌ Bitte nutze <#{RANK_CHANNEL_ID}>.", ephemeral=True)
+    
+    await interaction.response.defer()
+    
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -390,9 +429,13 @@ async def rank(interaction: discord.Interaction):
         res = cursor.fetchone()
         cursor.close()
         conn.close()
-        if not res: return await interaction.response.send_message("No rank found, start chatting!", ephemeral=True)
-        await interaction.response.send_message(f"🏅 Level: {res[1]} | XP: {res[0]}")
-    except Exception as e: await interaction.response.send_message(f"Error: {e}")
+        
+        if not res: return await interaction.followup.send("No rank found, start chatting!", ephemeral=True)
+        
+        # Bild generieren und senden
+        file = await create_rank_card(interaction.user, res[1], res[0])
+        await interaction.followup.send(file=file)
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
