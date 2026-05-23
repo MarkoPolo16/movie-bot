@@ -418,7 +418,7 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 async def rank(interaction: discord.Interaction):
     # Kanalprüfung
     if interaction.channel.id != RANK_CHANNEL_ID:
-        return await interaction.response.send_message(f"❌ Bitte nutze <#{RANK_CHANNEL_ID}>.", ephemeral=True)
+        return await interaction.response.send_message(f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", ephemeral=True)
     
     await interaction.response.defer()
     
