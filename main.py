@@ -386,27 +386,54 @@ class RatingView(discord.ui.View):
             INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
-            conn.commit()
             
-            # 2. XP hinzufügen (Zusatz für Film-Bewertung)
+            # 2. XP hinzufügen und aktuelle Werte abrufen
             xp_gain = 50
             cursor.execute("""
                 INSERT INTO levels (user_id, xp, level) 
                 VALUES (%s, %s, 1) 
                 ON CONFLICT(user_id) DO UPDATE 
-                SET xp = levels.xp + %s
+                SET xp = levels.xp + %s 
+                RETURNING xp, level
             """, (str(interaction.user.id), xp_gain, xp_gain))
-            conn.commit() # Noch einmal committen für die XP
             
-            # 3. Durchschnitt abrufen
+            xp, level = cursor.fetchone()
+            
+            # 3. Level-Up Logik (While-Schleife wie bei on_message)
+            level_up = False
+            while True:
+                needed_xp = int(100 * (1.2 ** (level - 1)))
+                if xp >= needed_xp:
+                    xp -= needed_xp
+                    level += 1
+                    level_up = True
+                else:
+                    break
+            
+            # Neue Werte in DB speichern
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                           (level, xp, str(interaction.user.id)))
+            
+            # Benachrichtigung, falls Level-Up
+            if level_up:
+                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                if log_chan: 
+                    await log_chan.send(f"🎉 {interaction.user.mention} hat durch eine Bewertung Level **{level}** erreicht!")
+            
+            conn.commit()
+            
+            # 4. Durchschnitt abrufen
             cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
             
-            # 4. Rückmeldung
-            await interaction.response.send_message(f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)", ephemeral=True)
+            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            if level_up:
+                msg += f"\n🎉 Glückwunsch! Du bist jetzt Level **{level}**!"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
             
         except Exception as e: print(e)
 
@@ -468,7 +495,6 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
 @bot.tree.command(name="rank", description="Check your current level")
 async def rank(interaction: discord.Interaction):
-    # Kanalprüfung
     if interaction.channel.id != RANK_CHANNEL_ID:
         return await interaction.response.send_message(f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", ephemeral=True)
     
@@ -479,13 +505,34 @@ async def rank(interaction: discord.Interaction):
         cursor = conn.cursor()
         cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(interaction.user.id),))
         res = cursor.fetchone()
+        
+        if not res: 
+            cursor.close()
+            conn.close()
+            return await interaction.followup.send("No rank found, start chatting!", ephemeral=True)
+        
+        xp, level = res
+        
+        # --- LEVEL-UP NACHHOLEN ---
+        level_up = False
+        while True:
+            needed_xp = int(100 * (1.2 ** (level - 1)))
+            if xp >= needed_xp:
+                xp -= needed_xp
+                level += 1
+                level_up = True
+            else:
+                break
+        
+        if level_up:
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                           (level, xp, str(interaction.user.id)))
+            conn.commit()
+        
         cursor.close()
         conn.close()
         
-        if not res: return await interaction.followup.send("No rank found, start chatting!", ephemeral=True)
-        
-        # Bild generieren und senden
-        file = await create_rank_card(interaction.user, res[1], res[0])
+        file = await create_rank_card(interaction.user, level, xp)
         await interaction.followup.send(file=file)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
