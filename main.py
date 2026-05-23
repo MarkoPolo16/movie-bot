@@ -1,4 +1,4 @@
-import os, discord, requests, psycopg2, logging, datetime, re
+import os, discord, requests, psycopg2, logging, datetime, re, random
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -17,7 +17,8 @@ CYAN = discord.Color.from_rgb(0, 255, 255)
 # SECTION: CONFIG & IDS (ADJUST HERE!)
 # ==========================================
 WELCOME_CHANNEL_ID = 1506237698304774215
-VERIFY_ROLE_ID = 1506242963318243379  
+VERIFY_ROLE_ID = 1506242963318243379 
+LEVEL_LOG_CHANNEL_ID = 1507865213511274557 # HIER DEINE KANAL-ID FÜR LEVEL-LOGS EINTRAGEN
 
 ALLOWED_ADMIN_IDS = [1506242002612916334, 1506242109689299004]
 
@@ -61,6 +62,10 @@ def init_db():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS ratings (
             user_id TEXT, movie_id INTEGER, movie_title TEXT, rating REAL, PRIMARY KEY (user_id, movie_id)
+        )""")
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS levels (
+            user_id TEXT PRIMARY KEY, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1
         )""")
         conn.commit()
         cursor.close()
@@ -134,6 +139,32 @@ async def on_ready():
     bot.add_view(RoleToggleView())
     await bot.tree.sync()
     print(f"🎬 {bot.user} is ready!")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or not message.guild: return
+    
+    # XP Logic
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        xp_gain = random.randint(5, 10)
+        cursor.execute("INSERT INTO levels (user_id, xp, level) VALUES (%s, %s, 1) ON CONFLICT(user_id) DO UPDATE SET xp = levels.xp + %s RETURNING xp, level", (str(message.author.id), xp_gain, xp_gain))
+        xp, level = cursor.fetchone()
+        
+        # Level Up Check (XP needed = level * 100)
+        if xp >= level * 100:
+            new_level = level + 1
+            cursor.execute("UPDATE levels SET level = %s, xp = 0 WHERE user_id = %s", (new_level, str(message.author.id)))
+            log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+            if log_chan: await log_chan.send(f"🎉 {message.author.mention} hat Level **{new_level}** erreicht!")
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e: print(f"XP Error: {e}")
+    
+    await bot.process_commands(message)
 
 @bot.event
 async def on_member_join(member):
@@ -349,6 +380,19 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+@bot.tree.command(name="rank", description="Check your current level")
+async def rank(interaction: discord.Interaction):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(interaction.user.id),))
+        res = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not res: return await interaction.response.send_message("No rank found, start chatting!", ephemeral=True)
+        await interaction.response.send_message(f"🏅 Level: {res[1]} | XP: {res[0]}")
+    except Exception as e: await interaction.response.send_message(f"Error: {e}")
 
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
