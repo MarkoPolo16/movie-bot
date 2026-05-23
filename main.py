@@ -380,17 +380,34 @@ class RatingView(discord.ui.View):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
+            
+            # 1. Rating speichern
             cursor.execute("""
             INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             conn.commit()
+            
+            # 2. XP hinzufügen (Zusatz für Film-Bewertung)
+            xp_gain = 50
+            cursor.execute("""
+                INSERT INTO levels (user_id, xp, level) 
+                VALUES (%s, %s, 1) 
+                ON CONFLICT(user_id) DO UPDATE 
+                SET xp = levels.xp + %s
+            """, (str(interaction.user.id), xp_gain, xp_gain))
+            conn.commit() # Noch einmal committen für die XP
+            
+            # 3. Durchschnitt abrufen
             cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
-            await interaction.response.send_message(f"✅ Rated {rating} stars! Average: {avg}/5 ({count} ratings)", ephemeral=True)
+            
+            # 4. Rückmeldung
+            await interaction.response.send_message(f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)", ephemeral=True)
+            
         except Exception as e: print(e)
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
