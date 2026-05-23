@@ -19,27 +19,33 @@ CYAN = discord.Color.from_rgb(0, 255, 255)
 # RANK CARD FUNKTION
 # ==========================================
 async def create_rank_card(member: discord.Member, level: int, xp: int):
-    # Lade das Hintergrundbild
     bg = Image.open("level-bg.jpg").convert("RGBA").resize((800, 200))
-    
-    # 1. Box für den Hintergrund (leicht transparent)
     overlay = Image.new('RGBA', (800, 200), (0, 0, 0, 120))
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
-    # 2. Fortschrittsbalken
+    # --- HIER WIRD DIE GRÖSSE ANGEGEBEN ---
+    # "arial.ttf" muss in deinem Ordner liegen! 
+    # Die Zahl (z.B. 40 oder 30) ist die Größe.
+    try:
+        font_name = ImageFont.truetype("arial.ttf", 40) # Größe 40 für den Namen
+        font_level = ImageFont.truetype("arial.ttf", 30) # Größe 30 für Level/XP
+    except:
+        font_name = ImageFont.load_default() # Fallback, falls arial.ttf fehlt
+        font_level = ImageFont.load_default()
+
+    # Fortschrittsbalken...
     needed_xp = level * 100
     progress = xp / needed_xp
     bar_x1, bar_y1 = 200, 140
     bar_x2, bar_y2 = 700, 170
-    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50)) # Hintergrund Balken
-    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255)) # Cyan Balken
+    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50))
+    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255))
 
-    # 3. Text (Name und Level)
-    draw.text((200, 40), f"{member.display_name}", fill=(255, 255, 255))
-    draw.text((200, 90), f"Level: {level} | XP: {xp}/{needed_xp}", fill=(255, 255, 255))
+    # --- HIER WIRD DIE GRÖSSE ANGEWENDET ---
+    draw.text((200, 30), f"{member.display_name}", font=font_name, fill=(255, 255, 255))
+    draw.text((200, 80), f"Level: {level} | XP: {xp}/{needed_xp}", font=font_level, fill=(255, 255, 255))
 
-    # Speichern
     buffer = io.BytesIO()
     bg.convert("RGB").save(buffer, format="PNG")
     buffer.seek(0)
