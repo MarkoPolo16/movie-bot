@@ -28,8 +28,8 @@ async def create_rank_card(member: discord.Member, level: int, xp: int):
     # "arial.ttf" muss in deinem Ordner liegen! 
     # Die Zahl (z.B. 40 oder 30) ist die Größe.
     try:
-        font_name = ImageFont.truetype("ARIAL.ttf", 80) # Größe 40 für den Namen
-        font_level = ImageFont.truetype("ARIAL.ttf", 60) # Größe 30 für Level/XP
+        font_name = ImageFont.truetype("ARIAL.TTF", 80) # Größe 40 für den Namen
+        font_level = ImageFont.truetype("ARIAL.TTF", 60) # Größe 30 für Level/XP
     except:
         font_name = ImageFont.load_default() # Fallback, falls arial.ttf fehlt
         font_level = ImageFont.load_default()
