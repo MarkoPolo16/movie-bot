@@ -26,8 +26,8 @@ async def create_rank_card(member: discord.Member, level: int, xp: int):
 
     # Schriftarten definieren
     try:
-        font_name = ImageFont.truetype("ARIAL.TTF", 50) 
-        font_level = ImageFont.truetype("ARIAL.TTF", 40)
+        font_name = ImageFont.truetype("ARIAL.TTF", 35) 
+        font_level = ImageFont.truetype("ARIAL.TTF", 30)
     except:
         font_name = ImageFont.load_default()
         font_level = ImageFont.load_default()
@@ -43,7 +43,7 @@ async def create_rank_card(member: discord.Member, level: int, xp: int):
     draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255)) # Balken
 
     # Texte zeichnen
-    draw.text((200, 30), f"{member.display_name}", font=font_name, fill=(255, 255, 255))
+    draw.text((200, 20), f"{member.display_name}", font=font_name, fill=(255, 255, 255))
     draw.text((200, 80), f"Level: {level} | XP: {xp}/{needed_xp}", font=font_level, fill=(255, 255, 255))
 
     buffer = io.BytesIO()
