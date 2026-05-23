@@ -24,25 +24,25 @@ async def create_rank_card(member: discord.Member, level: int, xp: int):
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
-    # --- HIER WIRD DIE GRÖSSE ANGEGEBEN ---
-    # "arial.ttf" muss in deinem Ordner liegen! 
-    # Die Zahl (z.B. 40 oder 30) ist die Größe.
+    # Schriftarten definieren
     try:
-        font_name = ImageFont.truetype("ARIAL.TTF", 50) # Größe 40 für den Namen
-        font_level = ImageFont.truetype("ARIAL.TTF", 40) # Größe 30 für Level/XP
+        font_name = ImageFont.truetype("ARIAL.TTF", 50) 
+        font_level = ImageFont.truetype("ARIAL.TTF", 40)
     except:
-        font_name = ImageFont.load_default() # Fallback, falls arial.ttf fehlt
+        font_name = ImageFont.load_default()
         font_level = ImageFont.load_default()
 
-    # Fortschrittsbalken...
-    needed_xp = level * 100
-    progress = xp / needed_xp
+    # --- NEUE LOGIK: XP-Berechnung identisch zu on_message ---
+    needed_xp = int(100 * (1.2 ** (level - 1)))
+    progress = min(xp / needed_xp, 1.0)
+    
+    # Fortschrittsbalken zeichnen
     bar_x1, bar_y1 = 200, 140
     bar_x2, bar_y2 = 700, 170
-    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50))
-    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255))
+    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50)) # Hintergrund
+    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255)) # Balken
 
-    # --- HIER WIRD DIE GRÖSSE ANGEWENDET ---
+    # Texte zeichnen
     draw.text((200, 30), f"{member.display_name}", font=font_name, fill=(255, 255, 255))
     draw.text((200, 80), f"Level: {level} | XP: {xp}/{needed_xp}", font=font_level, fill=(255, 255, 255))
 
@@ -188,20 +188,49 @@ async def on_message(message):
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         xp_gain = random.randint(5, 10)
-        cursor.execute("INSERT INTO levels (user_id, xp, level) VALUES (%s, %s, 1) ON CONFLICT(user_id) DO UPDATE SET xp = levels.xp + %s RETURNING xp, level", (str(message.author.id), xp_gain, xp_gain))
+        
+        # XP in DB erhöhen und aktuelle Werte abrufen
+        cursor.execute("""
+            INSERT INTO levels (user_id, xp, level) 
+            VALUES (%s, %s, 1) 
+            ON CONFLICT(user_id) DO UPDATE 
+            SET xp = levels.xp + %s 
+            RETURNING xp, level
+        """, (str(message.author.id), xp_gain, xp_gain))
+        
         xp, level = cursor.fetchone()
         
-        # Level Up Check
-        if xp >= level * 100:
-            new_level = level + 1
-            cursor.execute("UPDATE levels SET level = %s, xp = 0 WHERE user_id = %s", (new_level, str(message.author.id)))
+        # --- OPTIMIERTE LOGIK: WHILE-SCHLEIFE ---
+        level_up = False
+        old_level = level
+        
+        while True:
+            # Benötigte XP für das aktuelle Level berechnen
+            needed_xp = int(100 * (1.2 ** (level - 1)))
+            
+            if xp >= needed_xp:
+                xp -= needed_xp  # Rest-XP für das nächste Level behalten
+                level += 1
+                level_up = True
+            else:
+                break # Wenn nicht genug XP für das nächste Level, Schleife beenden
+        
+        # Nur wenn sich das Level geändert hat, in der Datenbank aktualisieren
+        if level_up:
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                           (level, xp, str(message.author.id)))
+            
+            # Benachrichtigung im Log-Channel
             log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-            if log_chan: await log_chan.send(f"🎉 {message.author.mention} hat Level **{new_level}** erreicht!")
+            if log_chan: 
+                await log_chan.send(f"🎉 {message.author.mention} has reached Level **{level}**!")
             
         conn.commit()
         cursor.close()
         conn.close()
-    except Exception as e: print(f"XP Error: {e}")
+        
+    except Exception as e: 
+        print(f"XP Error: {e}")
     
     await bot.process_commands(message)
 
