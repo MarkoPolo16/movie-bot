@@ -380,10 +380,7 @@ async def setup_roles_cmd(ctx):
 # MOVIE SEARCH & RATINGS (SLASH-COMMANDS)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
-    if not current or not TMDB_API_KEY:
-        await interaction.response.autocomplete([])
-        return
-
+    if not current or not TMDB_API_KEY: return []
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
         choices = []
@@ -392,11 +389,8 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
                 year = m.get("release_date", "0000")[:4]
                 label = f"{m['title']} ({year})"
                 choices.append(app_commands.Choice(name=label, value=label))
-        
-        await interaction.response.autocomplete(choices)
-    except Exception as e:
-        print(f"Autocomplete Error: {e}")
-        await interaction.response.autocomplete([])
+        return choices
+    except: return []
 
 async def director_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
@@ -426,31 +420,19 @@ class RatingView(discord.ui.View):
         self.movie_id = movie_id
         self.movie_title = movie_title
 
-async def save_rating(self, interaction: discord.Interaction, rating: float):
-    # Sofort defer, um das Zeitlimit zu verhindern
-    await interaction.response.defer(ephemeral=True)
-    
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        
-        # 1. Prüfen, ob der User den Film schon bewertet hat
-        cursor.execute("SELECT id FROM ratings WHERE user_id = %s AND movie_id = %s", 
-                       (str(interaction.user.id), self.movie_id))
-        already_rated = cursor.fetchone()
-        
-        # XP nur vergeben, wenn es ein neues Rating ist
-        xp_gain = 50 if not already_rated else 0
-        
-        # 2. Rating speichern (mit ON CONFLICT für das Update)
-        cursor.execute("""
-            INSERT INTO ratings (user_id, movie_id, movie_title, rating) 
-            VALUES (%s, %s, %s, %s)
+    async def save_rating(self, interaction: discord.Interaction, rating: float):
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            
+            # 1. Rating speichern
+            cursor.execute("""
+            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
-        """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
-        
-        # 3. XP hinzufügen (nur wenn xp_gain > 0)
-        if xp_gain > 0:
+            """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
+            
+            # 2. XP hinzufügen und aktuelle Werte abrufen
+            xp_gain = 50
             cursor.execute("""
                 INSERT INTO levels (user_id, xp, level) 
                 VALUES (%s, %s, 1) 
@@ -458,15 +440,11 @@ async def save_rating(self, interaction: discord.Interaction, rating: float):
                 SET xp = levels.xp + %s 
                 RETURNING xp, level
             """, (str(interaction.user.id), xp_gain, xp_gain))
-        else:
-            # Nur aktuelle Werte abrufen, ohne XP zu addieren
-            cursor.execute("SELECT xp, level FROM levels WHERE user_id = %s", (str(interaction.user.id),))
-        
-        xp, level = cursor.fetchone()
-        
-        # 4. Level-Up Logik (nur wenn XP hinzugefügt wurden)
-        level_up = False
-        if xp_gain > 0:
+            
+            xp, level = cursor.fetchone()
+            
+            # 3. Level-Up Logik (While-Schleife wie bei on_message)
+            level_up = False
             while True:
                 needed_xp = int(100 * (1.2 ** (level - 1)))
                 if xp >= needed_xp:
@@ -482,29 +460,26 @@ async def save_rating(self, interaction: discord.Interaction, rating: float):
             
             # Benachrichtigung, falls Level-Up
             if level_up:
-                log_chan = interaction.guild.get_channel(LEVEL_LOG_CHANNEL_ID)
+                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
                 if log_chan: 
-                    await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}**!")
-        
-        conn.commit()
-        
-        # 5. Durchschnitt abrufen
-        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
-        avg, count = cursor.fetchone()
-        avg = round(avg or 0.0, 1)
-        cursor.close()
-        conn.close()
-        
-        # Rückmeldung
-        msg = f"✅ Rated {rating} stars! ({'0' if already_rated else '50'} XP) Average: {avg}/5 ({count} ratings)"
-        if level_up:
-            msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
-        
-        # WICHTIG: Hier .followup.send verwenden, da wir oben defer() benutzt haben
-        await interaction.followup.send(msg)
+                    await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
             
-    except Exception as e:
-        print(f"Error saving rating: {e}")
+            conn.commit()
+            
+            # 4. Durchschnitt abrufen
+            cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            avg, count = cursor.fetchone()
+            avg = round(avg or 0.0, 1)
+            cursor.close()
+            conn.close()
+            
+            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            if level_up:
+                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
+            
+        except Exception as e: print(e)
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
@@ -564,55 +539,76 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
 @bot.tree.command(name="rank", description="Check the rank of you or another user")
 @app_commands.describe(member="Optional: User to check the rank for")
-async def rank(interaction: discord.Interaction, member: discord.Member = None):
-    if interaction.channel.id != RANK_CHANNEL_ID:
-        return await interaction.response.send_message(
-            f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", 
-            ephemeral=True
-        )
-    # Wenn kein User angegeben wurde, nimm den Ausführenden
-    target = member or interaction.user
-    
-    await interaction.response.defer()
-    
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        # Abfrage der Daten für den spezifischen target.id User
-        cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(target.id),))
-        res = cursor.fetchone()
-        
-        if not res:
-            cursor.close()
-            conn.close()
-            return await interaction.followup.send(f"{target.display_name} has no XP/rank data yet.", ephemeral=True)
-        
-        xp, level = res
-        
-        # Level-Update Logik (falls noch XP "offen" waren)
-        level_up = False
-        while True:
-            needed_xp = int(100 * (1.2 ** (level - 1)))
-            if xp >= needed_xp:
-                xp -= needed_xp
-                level += 1
-                level_up = True
-            else:
-                break
-        
-        if level_up:
-            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", (level, xp, str(target.id)))
+async def save_rating(self, interaction: discord.Interaction, rating: float):
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            
+            # 1. Prüfen, ob der User diesen Film bereits bewertet hat
+            cursor.execute("SELECT id FROM ratings WHERE user_id = %s AND movie_id = %s", 
+                           (str(interaction.user.id), self.movie_id))
+            already_rated = cursor.fetchone()
+            
+            # 2. Rating speichern (mit ON CONFLICT für das Update)
+            cursor.execute("""
+            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
+            ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+            """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
+            
+            # 3. XP nur hinzufügen, wenn es die erste Bewertung für diesen Film ist
+            xp_gain = 50 if not already_rated else 0
+            
+            level_up = False
+            level = 1
+            xp = 0
+            
+            if xp_gain > 0:
+                cursor.execute("""
+                    INSERT INTO levels (user_id, xp, level) 
+                    VALUES (%s, %s, 1) 
+                    ON CONFLICT(user_id) DO UPDATE 
+                    SET xp = levels.xp + %s 
+                    RETURNING xp, level
+                """, (str(interaction.user.id), xp_gain, xp_gain))
+                
+                xp, level = cursor.fetchone()
+                
+                # Level-Up Logik
+                while True:
+                    needed_xp = int(100 * (1.2 ** (level - 1)))
+                    if xp >= needed_xp:
+                        xp -= needed_xp
+                        level += 1
+                        level_up = True
+                    else:
+                        break
+                
+                # Neue Werte in DB speichern
+                cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                               (level, xp, str(interaction.user.id)))
+                
+                # Benachrichtigung, falls Level-Up
+                if level_up:
+                    log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                    if log_chan: 
+                        await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
+            
             conn.commit()
             
-        cursor.close()
-        conn.close()
-        
-        # Rank-Card mit dem korrekten 'target' User erstellen
-        file = await create_rank_card(target, level, xp)
-        await interaction.followup.send(file=file)
-        
-    except Exception as e:
-        await interaction.followup.send(f"Error loading rank: {e}")
+            # 4. Durchschnitt abrufen
+            cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            avg, count = cursor.fetchone()
+            avg = round(avg or 0.0, 1)
+            cursor.close()
+            conn.close()
+            
+            msg = f"✅ Rated {rating} stars! ({xp_gain} XP) Average: {avg}/5 ({count} ratings)"
+            if level_up:
+                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
+            
+        except Exception as e: print(e)
 
 
 @bot.tree.command(name="topxp", description="Show the top 10 users with the most XP")
