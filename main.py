@@ -496,7 +496,7 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 @bot.tree.command(name="rank", description="Check the rank of you or another user")
 @app_commands.describe(member="Optional: User to check the rank for")
 async def rank(interaction: discord.Interaction, member: discord.Member = None):
-    # Wenn kein User angegeben, nimm den Ausführenden
+    # Wenn kein User angegeben wurde, nimm den Ausführenden
     target = member or interaction.user
     
     await interaction.response.defer()
@@ -504,17 +504,18 @@ async def rank(interaction: discord.Interaction, member: discord.Member = None):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+        # Abfrage der Daten für den spezifischen target.id User
         cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(target.id),))
         res = cursor.fetchone()
         
         if not res:
             cursor.close()
             conn.close()
-            return await interaction.followup.send(f"{'Du' if target == interaction.user else target.name} your rank could not be found.", ephemeral=True)
+            return await interaction.followup.send(f"{target.display_name} has no XP/rank data yet.", ephemeral=True)
         
         xp, level = res
         
-        # Level-Update Logik (falls noch was offen ist)
+        # Level-Update Logik (falls noch XP "offen" waren)
         level_up = False
         while True:
             needed_xp = int(100 * (1.2 ** (level - 1)))
@@ -522,7 +523,8 @@ async def rank(interaction: discord.Interaction, member: discord.Member = None):
                 xp -= needed_xp
                 level += 1
                 level_up = True
-            else: break
+            else:
+                break
         
         if level_up:
             cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", (level, xp, str(target.id)))
@@ -531,9 +533,10 @@ async def rank(interaction: discord.Interaction, member: discord.Member = None):
         cursor.close()
         conn.close()
         
-        # Rank-Card erstellen
+        # Rank-Card mit dem korrekten 'target' User erstellen
         file = await create_rank_card(target, level, xp)
         await interaction.followup.send(file=file)
+        
     except Exception as e:
         await interaction.followup.send(f"Error loading rank: {e}")
 
