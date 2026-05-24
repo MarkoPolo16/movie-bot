@@ -539,100 +539,61 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
 @bot.tree.command(name="rank", description="Check the rank of you or another user")
 @app_commands.describe(member="Optional: User to check the rank for")
-async def save_rating(self, interaction: discord.Interaction, rating: float):
-        try:
-            conn = psycopg2.connect(DATABASE_URL)
-            cursor = conn.cursor()
-            
-            # 1. Prüfen, ob der User diesen Film bereits bewertet hat
-            cursor.execute("SELECT id FROM ratings WHERE user_id = %s AND movie_id = %s", 
-                           (str(interaction.user.id), self.movie_id))
-            already_rated = cursor.fetchone()
-            
-            # 2. Rating speichern (mit ON CONFLICT für das Update)
-            cursor.execute("""
-            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
-            ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
-            """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
-            
-            # 3. XP nur hinzufügen, wenn es die erste Bewertung für diesen Film ist
-            xp_gain = 50 if not already_rated else 0
-            
-            level_up = False
-            level = 1
-            xp = 0
-            
-            if xp_gain > 0:
-                cursor.execute("""
-                    INSERT INTO levels (user_id, xp, level) 
-                    VALUES (%s, %s, 1) 
-                    ON CONFLICT(user_id) DO UPDATE 
-                    SET xp = levels.xp + %s 
-                    RETURNING xp, level
-                """, (str(interaction.user.id), xp_gain, xp_gain))
-                
-                xp, level = cursor.fetchone()
-                
-                # Level-Up Logik
-                while True:
-                    needed_xp = int(100 * (1.2 ** (level - 1)))
-                    if xp >= needed_xp:
-                        xp -= needed_xp
-                        level += 1
-                        level_up = True
-                    else:
-                        break
-                
-                # Neue Werte in DB speichern
-                cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
-                               (level, xp, str(interaction.user.id)))
-                
-                # Benachrichtigung, falls Level-Up
-                if level_up:
-                    log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-                    if log_chan: 
-                        await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
-            
-            conn.commit()
-            
-            # 4. Durchschnitt abrufen
-            cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
-            avg, count = cursor.fetchone()
-            avg = round(avg or 0.0, 1)
-            cursor.close()
-            conn.close()
-            
-            msg = f"✅ Rated {rating} stars! ({xp_gain} XP) Average: {avg}/5 ({count} ratings)"
-            if level_up:
-                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
-            
-            await interaction.response.send_message(msg, ephemeral=True)
-            
-        except Exception as e: print(e)
-
-
-@bot.tree.command(name="topxp", description="Show the top 10 users with the most XP")
-async def topxp(interaction: discord.Interaction):
+@bot.tree.command(name="rank", description="Check the rank of you or another user")
+@app_commands.describe(member="Optional: User to check the rank for")
+async def rank(interaction, member: discord.Member = None):
+    # 1. Kanal-Prüfung
+    if interaction.channel.id != RANK_CHANNEL_ID:
+        return await interaction.response.send_message(
+            f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", 
+            ephemeral=True
+        )
+    
+    # 2. Sofort defer, damit der Bot Zeit für die Bild-Generierung hat
+    await interaction.response.defer()
+    
+    target = member or interaction.user
+    
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
-        results = cursor.fetchall()
+        
+        # 3. XP und Level abrufen
+        cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(target.id),))
+        res = cursor.fetchone()
+        
+        if not res:
+            cursor.close()
+            conn.close()
+            return await interaction.followup.send(f"❌ {target.display_name} has no XP/rank data yet.", ephemeral=True)
+        
+        xp, level = res
+        
+        # 4. Level-Update Logik (falls XP "offen" waren)
+        level_up = False
+        while True:
+            needed_xp = int(100 * (1.2 ** (level - 1)))
+            if xp >= needed_xp:
+                xp -= needed_xp
+                level += 1
+                level_up = True
+            else:
+                break
+        
+        if level_up:
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", (level, xp, str(target.id)))
+            conn.commit()
+            
         cursor.close()
         conn.close()
         
-        if not results:
-            return await interaction.response.send_message("No XP data available.")
+        # 5. Rank-Card erstellen und senden
+        file = await create_rank_card(target, level, xp)
+        await interaction.followup.send(file=file)
         
-        embed = discord.Embed(title="🏆 Top 10 XP-Leaderboard", color=CYAN)
-        for idx, (uid, xp, lvl) in enumerate(results, 1):
-            member = interaction.guild.get_member(int(uid))
-            name = member.display_name if member else f"User {uid}"
-            embed.add_field(name=f"{idx}. {name}", value=f"Level: {lvl} | XP: {xp}", inline=False)
-        
-        await interaction.response.send_message(embed=embed)
     except Exception as e:
-        await interaction.response.send_message(f"Error: {e}")
+        print(f"Error in rank command: {e}")
+        await interaction.followup.send(f"❌ An error occurred while loading the rank: {e}")
 
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
