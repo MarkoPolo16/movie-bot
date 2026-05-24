@@ -429,19 +429,22 @@ async def actor_autocomplete(interaction: discord.Interaction, current: str):
 
 
 async def tv_autocomplete(interaction: discord.Interaction, current: str):
-    if not current:
-        return [] # Wenn nichts getippt wurde, keine Vorschläge
-    
-    # Hier rufst du deine API für die Suche auf
-    # WICHTIG: Ersetze das hier durch deine API-Logik (tmdb search)
-    results = search_tv_in_api(current) 
-    
-    # Wir geben die ersten 25 Ergebnisse zurück (Discord Limit)
-    return [
-        discord.app_commands.Choice(name=show['name'], value=show['name'])
-        for show in results[:25]
-    ]
-
+    if not current or not TMDB_API_KEY: 
+        return []
+    try:
+        # API Abfrage für Serien
+        data = requests.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={current}").json()
+        choices = []
+        for s in data.get("results", [])[:5]:
+            if s.get("name"):
+                # Jahr aus first_air_date extrahieren (falls vorhanden)
+                year = s.get("first_air_date", "0000")[:4]
+                label = f"{s['name']} ({year})"
+                # Der Value enthält nun auch das Jahr, damit der Command später unterscheiden kann
+                choices.append(app_commands.Choice(name=label, value=label))
+        return choices
+    except: 
+        return []
 class RatingView(discord.ui.View):
     def __init__(self, item_id: int, item_title: str, is_tv: bool = False):
         super().__init__(timeout=120)
