@@ -415,84 +415,86 @@ async def actor_autocomplete(interaction: discord.Interaction, current: str):
     except: return []
 
 class RatingView(discord.ui.View):
-    def __init__(self, movie_id: int, movie_title: str):
+    def __init__(self, item_id: int, item_title: str, is_tv: bool = False):
         super().__init__(timeout=120)
-        self.movie_id = movie_id
-        self.movie_title = movie_title
+        self.item_id = item_id
+        self.item_title = item_title
+        self.is_tv = is_tv
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
             
-            # 1. ZUERST prüfen: Hat der User diesen Film schon bewertet?
-            cursor.execute("SELECT 1 FROM ratings WHERE user_id = %s AND movie_id = %s", 
-                           (str(interaction.user.id), self.movie_id))
-            already_rated = cursor.fetchone()
+            # Wähle Tabelle und Spalten basierend auf dem Typ
+            table = "tv_ratings" if self.is_tv else "ratings"
+            id_col = "tv_id" if self.is_tv else "movie_id"
+            title_col = "tv_title" if self.is_tv else "movie_title"
             
-            # XP-Gain: Wenn schon bewertet -> 0, sonst -> 50
+            # 1. Prüfen ob schon bewertet
+            cursor.execute(f"SELECT 1 FROM {table} WHERE user_id = %s AND {id_col} = %s", 
+                           (str(interaction.user.id), self.item_id))
+            already_rated = cursor.fetchone()
             xp_gain = 0 if already_rated else 50
             
             # 2. Rating speichern/aktualisieren
-            cursor.execute("""
-                INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
-                ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
-            """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
+            cursor.execute(f"""
+                INSERT INTO {table} (user_id, {id_col}, {title_col}, rating) 
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT(user_id, {id_col}) DO UPDATE SET rating = EXCLUDED.rating
+            """, (str(interaction.user.id), self.item_id, self.item_title, rating))
             
-            # 3. XP hinzufügen (nur wenn xp_gain > 0)
+            # 3. XP hinzufügen
             level_up = False
             level = 1
             xp = 0
             
             if xp_gain > 0:
                 cursor.execute("""
-                    INSERT INTO levels (user_id, xp, level) 
-                    VALUES (%s, %s, 1) 
-                    ON CONFLICT(user_id) DO UPDATE 
-                    SET xp = levels.xp + %s 
+                    INSERT INTO levels (user_id, xp, level) VALUES (%s, %s, 1) 
+                    ON CONFLICT(user_id) DO UPDATE SET xp = levels.xp + %s 
                     RETURNING xp, level
                 """, (str(interaction.user.id), xp_gain, xp_gain))
                 
                 xp, level = cursor.fetchone()
                 
-                # Level-Up Logik
                 while True:
                     needed_xp = int(100 * (1.2 ** (level - 1)))
                     if xp >= needed_xp:
                         xp -= needed_xp
                         level += 1
                         level_up = True
-                    else:
-                        break
+                    else: break
                 
                 cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
                                (level, xp, str(interaction.user.id)))
                 
                 if level_up:
                     log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-                    if log_chan: 
-                        await log_chan.send(f"🎉 {interaction.user.mention} hat Level **{level}** erreicht!")
+                    if log_chan: await log_chan.send(f"🎉 {interaction.user.mention} hat Level **{level}** erreicht!")
             
             conn.commit()
             
             # 4. Durchschnitt abrufen
-            cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
+            cursor.execute(f"SELECT AVG(rating), COUNT(*) FROM {table} WHERE {id_col}=%s", (self.item_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
-            if level_up:
-                msg += f"\n🎉 Congrats! You reached Level **{level}**!"
-                
+            msg = f"✅ Rating Saved {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} Ratings)"
+            if level_up: msg += f"\n🎉 Congrats! You reached Level **{level}**!"
             
-            # WICHTIG: Das ist die Nachricht, die nur du siehst (ephemeral=True)
-            await interaction.response.send_message(msg, ephemeral=True)
+            # Embed aktualisieren
+            embed = interaction.message.embeds[0]
+            embed.set_field_at(0, name="Status", value=msg, inline=False) # Nutze set_field_at, falls schon ein Status-Feld existiert
+            await interaction.response.edit_message(embed=embed, view=self)
             
         except Exception as e:
             print(f"Error: {e}")
+            await interaction.response.send_message("Ein Fehler ist aufgetreten.", ephemeral=True)
 
+    # Buttons bleiben identisch
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
     @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
@@ -616,10 +618,7 @@ async def topxp(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        
-        # Angepasster Query: Sortiert zuerst nach Level, dann nach XP
-        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY level DESC, xp DESC LIMIT 10")
-        
+        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
         results = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -721,6 +720,61 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
+
+
+import requests
+
+def get_tv_from_api(name):
+    # Ersetze 'DEIN_API_KEY' durch deinen echten Key
+    api_key = "DEIN_API_KEY"
+    url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={name}"
+    
+    response = requests.get(url)
+    data = response.json()
+    
+    # Prüfen, ob wir Ergebnisse gefunden haben
+    if data['results']:
+        # Wir nehmen das erste Ergebnis aus der Liste
+        first_show = data['results'][0]
+        return {
+            'id': first_show['id'],
+            'name': first_show['name'],
+            'overview': first_show['overview']
+        }
+    else:
+        return None
+
+
+
+@bot.tree.command(name="tv", description="Zeige Informationen zu einer TV-Serie")
+async def tv(interaction: discord.Interaction, name: str):
+    tv_data = get_tv_from_api(name) # Deine Funktion
+    
+    if not tv_data:
+        await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
+        return
+
+    embed = discord.Embed(title=tv_data['name'], description=tv_data['overview'], color=CYAN)
+    # ... hier restliche Felder wie Jahr, Genre etc. ...
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="ratetv", description="Bewerte eine TV-Serie")
+async def ratetv(interaction: discord.Interaction, name: str):
+    # Wir suchen die Serie erst, um die ID und den Titel für die View zu bekommen
+    tv_data = get_tv_from_api(name)
+    
+    if not tv_data:
+        await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
+        return
+
+    embed = discord.Embed(title=f"Bewerte: {tv_data['name']}", description="Klicke auf einen Button, um zu bewerten.", color=CYAN)
+    
+    # Hier fügen wir die View mit den Buttons hinzu
+    view = RatingView(item_id=tv_data['id'], item_title=tv_data['name'], is_tv=True)
+    
+    await interaction.response.send_message(embed=embed, view=view)
 
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
