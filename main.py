@@ -671,6 +671,10 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         
         movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
         
+        # Director abrufen
+        credits_data = requests.get(f"https://api.themoviedb.org/3/movie/{movie['id']}/credits?api_key={TMDB_API_KEY}").json()
+        director = next((c["name"] for c in credits_data.get("crew", []) if c["job"] == "Director"), "N/A")
+        
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (movie["id"],))
@@ -681,12 +685,12 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
         embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
+        embed.add_field(name="👤 Director", value=director) # Neues Feld für den Director
         embed.add_field(name="⭐ Server Average", value=f"{avg}/5 ({count} ratings)")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
-
 
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
