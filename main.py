@@ -684,8 +684,8 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 
-@app_commands.command(name="avg", description="Shows your personal average rating for all rated movies")
-async def avg_rating(self, interaction: discord.Interaction):
+@app_commands.command(name="avg", description="Show your average rating and stats")
+async def avg(self, interaction: discord.Interaction): # <--- Stelle sicher, dass hier discord.Interaction steht
     await interaction.response.defer(ephemeral=True)
         
     try:
