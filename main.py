@@ -684,33 +684,33 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 
-@app_commands.command(name="avg", description="Show your average rating and stats")
-async def avg(interaction: 'discord.Interaction'): # Beachte die Anführungszeichen!
+# Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
+@bot.tree.command(name="avg", description="Show your average rating and stats")
+async def avg(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-        
+    
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
             
-        # Durchschnitt und Anzahl der bewerteten Filme für den User abrufen
         cursor.execute("""
             SELECT AVG(rating), COUNT(*) 
             FROM ratings 
             WHERE user_id = %s
         """, (str(interaction.user.id),))
             
-        avg, count = cursor.fetchone()
+        avg_val, count = cursor.fetchone()
         cursor.close()
         conn.close()
             
         if count == 0:
             await interaction.followup.send("You haven't rated any movies yet.", ephemeral=True)
         else:
-            avg = round(avg or 0.0, 1)
+            avg_val = round(avg_val or 0.0, 1)
             await interaction.followup.send(
                 f"📊 **Your Statistics:**\n"
                 f"Movies rated: {count}\n"
-                f"Average rating: {avg}/5 ⭐", 
+                f"Average rating: {avg_val}/5 ⭐", 
                 ephemeral=True
             )
                 
