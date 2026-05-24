@@ -713,6 +713,30 @@ async def actress_info(interaction: discord.Interaction, name: str):
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
+
+
+
+
+def get_tv_from_api(name):
+    # API-Key aus deiner Umgebungsvariable
+    api_key = os.getenv("TMDB_API_KEY")
+    # Zuerst suchen wir nach der ID, damit wir die Details bekommen
+    search_url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={name}"
+    
+    response = requests.get(search_url)
+    data = response.json()
+    
+    if data.get('results'):
+        # Nimm das erste Ergebnis
+        show = data['results'][0]
+        return {
+            'id': show['id'],
+            'name': show['name'],
+            'overview': show['overview']
+        }
+    return None
+
+
 @bot.tree.command(name="tv", description="Show TV series information")
 @app_commands.describe(tv_name="Name of the TV series")
 @app_commands.autocomplete(tv_name=tv_autocomplete) # Nutzt das Autocomplete von vorher
@@ -755,45 +779,6 @@ async def tv_info(interaction: discord.Interaction, tv_name: str):
         
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
-
-
-
-def get_tv_from_api(name):
-    # API-Key aus deiner Umgebungsvariable
-    api_key = os.getenv("TMDB_API_KEY")
-    # Zuerst suchen wir nach der ID, damit wir die Details bekommen
-    search_url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={name}"
-    
-    response = requests.get(search_url)
-    data = response.json()
-    
-    if data.get('results'):
-        # Nimm das erste Ergebnis
-        show = data['results'][0]
-        return {
-            'id': show['id'],
-            'name': show['name'],
-            'overview': show['overview']
-        }
-    return None
-
-
-@bot.tree.command(name="tv", description="Suche eine TV-Serie")
-@app_commands.autocomplete(name=tv_autocomplete) # Hier wird das Autocomplete registriert
-async def tv(interaction: discord.Interaction, name: str):
-    # 1. Daten holen (da 'name' jetzt validiert ist)
-    tv_data = get_tv_from_api(name) 
-    
-    if not tv_data:
-        await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
-        return
-        
-    # 2. Embed bauen
-    embed = discord.Embed(title=tv_data['name'], description=tv_data['overview'], color=CYAN)
-    # ... hier restliche Embed-Felder ...
-    
-    # 3. Senden
-    await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="ratetv", description="Rate a TV series")
