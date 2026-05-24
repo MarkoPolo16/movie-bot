@@ -687,7 +687,8 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
 async def avg(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    # 'ephemeral=False' macht die Nachricht für alle sichtbar
+    await interaction.response.defer(ephemeral=False)
     
     try:
         conn = psycopg2.connect(DATABASE_URL)
@@ -704,14 +705,20 @@ async def avg(interaction: discord.Interaction):
         conn.close()
             
         if count == 0:
+            # Wenn noch keine Bewertung da ist, ist 'ephemeral=True' besser, 
+            # damit der Chat nicht mit "Du hast noch nichts bewertet" zugemüllt wird.
             await interaction.followup.send("You haven't rated any movies yet.", ephemeral=True)
         else:
-            avg_val = round(avg_val or 0.0, 1)
+            # avg_val kann None sein, falls keine Ratings existieren (wird durch 'or 0.0' abgefangen)
+            val = avg_val or 0.0
+            # '.3f' erzwingt genau 3 Nachkommastellen
+            formatted_avg = f"{val:.3f}"
+            
             await interaction.followup.send(
-                f"📊 **Your Statistics:**\n"
+                f"📊 **Statistics for {interaction.user.mention}:**\n"
                 f"Movies rated: {count}\n"
-                f"Average rating: {avg_val}/5 ⭐", 
-                ephemeral=True
+                f"Average rating: {formatted_avg}/5 ⭐", 
+                ephemeral=False
             )
                 
     except Exception as e:
