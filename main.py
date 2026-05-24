@@ -685,7 +685,7 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
 
 
 @app_commands.command(name="avg", description="Show your average rating and stats")
-async def avg(self, interaction: 'discord.Interaction'): # Beachte die Anführungszeichen!
+async def avg(interaction: 'discord.Interaction'): # Beachte die Anführungszeichen!
     await interaction.response.defer(ephemeral=True)
         
     try:
