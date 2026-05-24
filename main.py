@@ -713,38 +713,45 @@ async def actress_info(interaction: discord.Interaction, name: str):
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
-@bot.tree.command(name="film", description="Show movie information for all")
-@app_commands.describe(movie_name="Name of the Movie")
-@app_commands.autocomplete(movie_name=movie_autocomplete)
-async def film_info(interaction: discord.Interaction, movie_name: str):
+@bot.tree.command(name="tv", description="Show TV series information")
+@app_commands.describe(tv_name="Name of the TV series")
+@app_commands.autocomplete(tv_name=tv_autocomplete) # Nutzt das Autocomplete von vorher
+async def tv_info(interaction: discord.Interaction, tv_name: str):
     await interaction.response.defer()
     try:
-        clean_name = re.sub(r'\s\(\d{4}\)$', '', movie_name)
-        year_match = re.search(r'\((\d{4})\)', movie_name)
+        # 1. Daten holen (Hier nutzen wir deine get_tv_from_api Logik)
+        # Wir bereinigen das Jahr wie bei deinem Film-Command
+        clean_name = re.sub(r'\s\(\d{4}\)$', '', tv_name)
+        year_match = re.search(r'\((\d{4})\)', tv_name)
         target_year = year_match.group(1) if year_match else None
         
-        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={clean_name}").json()
-        if not data.get("results"): return await interaction.followup.send("Kein Film gefunden.")
+        # API Abfrage für Serien
+        data = requests.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={clean_name}").json()
+        if not data.get("results"): return await interaction.followup.send("Keine Serie gefunden.")
         
-        movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
+        series = next((s for s in data["results"] if s.get("first_air_date", "")[:4] == target_year), data["results"][0])
         
-        # Director abrufen
-        credits_data = requests.get(f"https://api.themoviedb.org/3/movie/{movie['id']}/credits?api_key={TMDB_API_KEY}").json()
-        director = next((c["name"] for c in credits_data.get("crew", []) if c["job"] == "Director"), "N/A")
+        # 2. Credits abrufen (für Creator/Director)
+        credits_data = requests.get(f"https://api.themoviedb.org/3/tv/{series['id']}/credits?api_key={TMDB_API_KEY}").json()
+        # Bei Serien heißt das Feld oft 'created_by'
+        creator = credits_data.get("created_by", [])
+        creator_name = creator[0]["name"] if creator else "N/A"
         
+        # 3. Durchschnitt aus der tv_ratings Tabelle
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE tv_id=%s", (series["id"],))
         avg, count = cursor.fetchone()
         avg = round(avg or 0.0, 1)
         cursor.close()
         conn.close()
 
-        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
-        embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
-        embed.add_field(name="🎥 Director", value=director)
+        # 4. Embed erstellen (identisch zu /film)
+        embed = discord.Embed(title=f"📺 {series['name']}", description=series.get('overview', '')[:1000], color=CYAN)
+        embed.add_field(name="📅 First Air Date", value=series.get("first_air_date", "N/A")[:4])
+        embed.add_field(name="✍️ Creator", value=creator_name)
         embed.add_field(name="⭐ Server Average", value=f"{avg}/5 ({count} ratings)")
-        if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
+        if series.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{series['poster_path']}")
         
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
@@ -789,23 +796,50 @@ async def tv(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="ratetv", description="Bewerte eine TV-Serie")
-@app_commands.autocomplete(name=tv_autocomplete) # Hier hängst du es dran
-async def ratetv(interaction: discord.Interaction, name: str):
-    # 1. Daten holen (da der User aus der Liste gewählt hat, passt 'name' perfekt)
-    tv_data = get_tv_from_api(name)
+@bot.tree.command(name="ratetv", description="Rate a TV series")
+@app_commands.describe(tv_name="Name of the TV series to rate")
+@app_commands.autocomplete(tv_name=tv_autocomplete) # Nutzt dein Autocomplete
+async def ratetv(interaction: discord.Interaction, tv_name: str):
+    # 1. Sofort defer, damit der Bot Zeit für die API-Anfrage hat
+    await interaction.response.defer()
     
-    if not tv_data:
-        await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
-        return
+    try:
+        # Daten bereinigen (wie in deinem Film-Command)
+        clean_name = re.sub(r'\s\(\d{4}\)$', '', tv_name)
+        year_match = re.search(r'\((\d{4})\)', tv_name)
+        target_year = year_match.group(1) if year_match else None
+        
+        # 2. Daten aus der API holen
+        data = requests.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={clean_name}").json()
+        if not data.get("results"): 
+            return await interaction.followup.send("❌ Keine Serie gefunden.", ephemeral=True)
+        
+        series = next((s for s in data["results"] if s.get("first_air_date", "")[:4] == target_year), data["results"][0])
+        
+        # 3. Datenbank-Check für den aktuellen Server-Durchschnitt
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE tv_id=%s", (series["id"],))
+        avg, count = cursor.fetchone()
+        avg = round(avg or 0.0, 1)
+        cursor.close()
+        conn.close()
 
-    # 2. Embed bauen
-    embed = discord.Embed(title=f"Bewerte: {tv_data['name']}", description="Klicke auf einen Button, um zu bewerten.", color=CYAN)
-    
-    # 3. View mit is_tv=True für die Buttons
-    view = RatingView(item_id=tv_data['id'], item_title=tv_data['name'], is_tv=True)
-    
-    await interaction.response.send_message(embed=embed, view=view)
+        # 4. Embed mit den Infos und der RatingView (für Buttons)
+        embed = discord.Embed(title=f"⭐ Rate: {series['name']}", description="Klicke auf einen Button, um zu bewerten.", color=CYAN)
+        embed.add_field(name="📅 First Air Date", value=series.get("first_air_date", "N/A")[:4])
+        embed.add_field(name="⭐ Current Server Avg", value=f"{avg}/5 ({count} ratings)")
+        if series.get("poster_path"): 
+            embed.set_image(url=f"https://image.tmdb.org/t/p/w500{series['poster_path']}")
+        
+        # Die RatingView mit is_tv=True sorgt dafür, dass die Buttons in tv_ratings speichern
+        view = RatingView(item_id=series['id'], item_title=series['name'], is_tv=True)
+        
+        await interaction.followup.send(embed=embed, view=view)
+        
+    except Exception as e:
+        print(f"Error in ratetv: {e}")
+        await interaction.followup.send(f"❌ An error occurred: {e}")
 
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
@@ -848,24 +882,38 @@ async def avg(interaction: discord.Interaction):
         print(f"Error /avg: {e}")
         await interaction.followup.send("An error occurred while fetching your statistics.", ephemeral=True)
 
-@bot.tree.command(name="toplist", description="Showing the top 10 reviewers")
+@bot.tree.command(name="toplist", description="Showing the top 10 reviewers (Movies + TV)")
 async def toplist(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, COUNT(*) as count FROM ratings GROUP BY user_id ORDER BY count DESC LIMIT 10")
+        
+        # Wir zählen die Bewertungen aus BEIDEN Tabellen pro User
+        query = """
+            SELECT user_id, SUM(total_count) as total_ratings 
+            FROM (
+                SELECT user_id, COUNT(*) as total_count FROM ratings GROUP BY user_id
+                UNION ALL
+                SELECT user_id, COUNT(*) as total_count FROM tv_ratings GROUP BY user_id
+            ) AS combined_ratings
+            GROUP BY user_id 
+            ORDER BY total_ratings DESC 
+            LIMIT 10
+        """
+        cursor.execute(query)
         results = cursor.fetchall()
         cursor.close()
         conn.close()
         
         if not results:
-            return await interaction.response.send_message("No reviews yet.")
+            return await interaction.response.send_message("Noch keine Bewertungen vorhanden.")
         
-        embed = discord.Embed(title="🏆 Top 10 reviewers", color=CYAN)
+        embed = discord.Embed(title="🏆 Top 10 Reviewers (Movies & TV)", color=CYAN)
         for idx, (uid, count) in enumerate(results, 1):
             member = interaction.guild.get_member(int(uid))
             name = member.display_name if member else f"User {uid}"
-            embed.add_field(name=f"{idx}. {name}", value=f"{count} movies rated", inline=False)
+            # Wir ändern den Text leicht, um anzuzeigen, dass es beides ist
+            embed.add_field(name=f"{idx}. {name}", value=f"{count} items rated", inline=False)
         
         await interaction.response.send_message(embed=embed)
     except Exception as e:
