@@ -424,50 +424,54 @@ class RatingView(discord.ui.View):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
+            
+            # 1. ZUERST prüfen: Hat der User diesen Film schon bewertet?
             cursor.execute("SELECT 1 FROM ratings WHERE user_id = %s AND movie_id = %s", 
                            (str(interaction.user.id), self.movie_id))
             already_rated = cursor.fetchone()
-            xp_gain = 0 if already_rated else 50
-
             
-            # 1. Rating speichern
+            # XP-Gain: Wenn schon bewertet -> 0, sonst -> 50
+            xp_gain = 0 if already_rated else 50
+            
+            # 2. Rating speichern/aktualisieren
             cursor.execute("""
-            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
-            ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+                INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
+                ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             
-            # 2. XP hinzufügen und aktuelle Werte abrufen
-            xp_gain = 50
-            cursor.execute("""
-                INSERT INTO levels (user_id, xp, level) 
-                VALUES (%s, %s, 1) 
-                ON CONFLICT(user_id) DO UPDATE 
-                SET xp = levels.xp + %s 
-                RETURNING xp, level
-            """, (str(interaction.user.id), xp_gain, xp_gain))
-            
-            xp, level = cursor.fetchone()
-            
-            # 3. Level-Up Logik (While-Schleife wie bei on_message)
+            # 3. XP hinzufügen (nur wenn xp_gain > 0)
             level_up = False
-            while True:
-                needed_xp = int(100 * (1.2 ** (level - 1)))
-                if xp >= needed_xp:
-                    xp -= needed_xp
-                    level += 1
-                    level_up = True
-                else:
-                    break
+            level = 1
+            xp = 0
             
-            # Neue Werte in DB speichern
-            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
-                           (level, xp, str(interaction.user.id)))
-            
-            # Benachrichtigung, falls Level-Up
-            if level_up:
-                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-                if log_chan: 
-                    await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
+            if xp_gain > 0:
+                cursor.execute("""
+                    INSERT INTO levels (user_id, xp, level) 
+                    VALUES (%s, %s, 1) 
+                    ON CONFLICT(user_id) DO UPDATE 
+                    SET xp = levels.xp + %s 
+                    RETURNING xp, level
+                """, (str(interaction.user.id), xp_gain, xp_gain))
+                
+                xp, level = cursor.fetchone()
+                
+                # Level-Up Logik
+                while True:
+                    needed_xp = int(100 * (1.2 ** (level - 1)))
+                    if xp >= needed_xp:
+                        xp -= needed_xp
+                        level += 1
+                        level_up = True
+                    else:
+                        break
+                
+                cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                               (level, xp, str(interaction.user.id)))
+                
+                if level_up:
+                    log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                    if log_chan: 
+                        await log_chan.send(f"🎉 {interaction.user.mention} hat Level **{level}** erreicht!")
             
             conn.commit()
             
@@ -478,13 +482,15 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
             if level_up:
-                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
+                msg += f"\n🎉 Congrats! You reached Level **{level}**!"
             
+            # WICHTIG: Das ist die Nachricht, die nur du siehst (ephemeral=True)
             await interaction.response.send_message(msg, ephemeral=True)
             
-        except Exception as e: print(e)
+        except Exception as e:
+            print(f"Error: {e}")
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
