@@ -836,37 +836,37 @@ async def ratetv(interaction: discord.Interaction, tv_name: str):
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
 async def avg(interaction: discord.Interaction):
-    # 'ephemeral=False' macht die Nachricht für alle sichtbar
     await interaction.response.defer(ephemeral=False)
     
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
             
-        cursor.execute("""
-            SELECT AVG(rating), COUNT(*) 
-            FROM ratings 
-            WHERE user_id = %s
-        """, (str(interaction.user.id),))
+        # Stats Filme
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE user_id = %s", (str(interaction.user.id),))
+        avg_movie, count_movie = cursor.fetchone()
+        
+        # Stats Serien
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE user_id = %s", (str(interaction.user.id),))
+        avg_tv, count_tv = cursor.fetchone()
             
-        avg_val, count = cursor.fetchone()
         cursor.close()
         conn.close()
             
-        if count == 0:
-            # Wenn noch keine Bewertung da ist, ist 'ephemeral=True' besser, 
-            # damit der Chat nicht mit "Du hast noch nichts bewertet" zugemüllt wird.
-            await interaction.followup.send("You haven't rated any movies yet.", ephemeral=True)
+        total_count = (count_movie or 0) + (count_tv or 0)
+        
+        if total_count == 0:
+            await interaction.followup.send("You haven't rated any movies or TV shows yet.", ephemeral=True)
         else:
-            # avg_val kann None sein, falls keine Ratings existieren (wird durch 'or 0.0' abgefangen)
-            val = avg_val or 0.0
-            # '.3f' erzwingt genau 3 Nachkommastellen
-            formatted_avg = f"{val:.3f}"
+            m_val = round(avg_movie or 0.0, 3)
+            t_val = round(avg_tv or 0.0, 3)
             
             await interaction.followup.send(
                 f"📊 **Statistics for {interaction.user.mention}:**\n"
-                f"Movies rated: {count}\n"
-                f"Average rating: {formatted_avg}/5 ⭐", 
+                f"Movies rated: {count_movie or 0}\n"
+                f"TV shows rated: {count_tv or 0}\n"
+                f"Average movie rating: {m_val:.3f}/5 ⭐\n"
+                f"Average TV show rating: {t_val:.3f}/5 ⭐", 
                 ephemeral=False
             )
                 
