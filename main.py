@@ -459,6 +459,12 @@ class RatingView(discord.ui.View):
             id_col = "tv_id" if self.is_tv else "movie_id"
             title_col = "tv_title" if self.is_tv else "movie_title"
             
+            # --- XP-SCHUTZ: Prüfen, ob bereits bewertet ---
+            cursor.execute(f"SELECT rating FROM {table} WHERE user_id = %s AND {id_col} = %s", 
+                           (str(interaction.user.id), self.item_id))
+            already_rated = cursor.fetchone()
+            xp_gain = 0 if already_rated else 50
+            
             # 1. Rating speichern
             cursor.execute(f"""
                 INSERT INTO {table} (user_id, {id_col}, {title_col}, rating) 
@@ -466,36 +472,36 @@ class RatingView(discord.ui.View):
                 ON CONFLICT(user_id, {id_col}) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.item_id, self.item_title, rating))
             
-            # 2. XP hinzufügen
-            xp_gain = 50
-            cursor.execute("""
-                INSERT INTO levels (user_id, xp, level) 
-                VALUES (%s, %s, 1) 
-                ON CONFLICT(user_id) DO UPDATE 
-                SET xp = levels.xp + %s 
-                RETURNING xp, level
-            """, (str(interaction.user.id), xp_gain, xp_gain))
-            
-            xp, level = cursor.fetchone()
-            
-            # 3. Level-Up Logik (identisch)
+            # 2. XP nur hinzufügen, wenn es die erste Bewertung für diesen Titel ist
             level_up = False
-            while True:
-                needed_xp = int(100 * (1.2 ** (level - 1)))
-                if xp >= needed_xp:
-                    xp -= needed_xp
-                    level += 1
-                    level_up = True
-                else:
-                    break
-            
-            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
-                           (level, xp, str(interaction.user.id)))
-            
-            if level_up:
-                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-                if log_chan: 
-                    await log_chan.send(f"🎉 {interaction.user.mention} reached Level **{level}**!")
+            if xp_gain > 0:
+                cursor.execute("""
+                    INSERT INTO levels (user_id, xp, level) 
+                    VALUES (%s, %s, 1) 
+                    ON CONFLICT(user_id) DO UPDATE 
+                    SET xp = levels.xp + %s 
+                    RETURNING xp, level
+                """, (str(interaction.user.id), xp_gain, xp_gain))
+                
+                xp, level = cursor.fetchone()
+                
+                # 3. Level-Up Logik
+                while True:
+                    needed_xp = int(100 * (1.2 ** (level - 1)))
+                    if xp >= needed_xp:
+                        xp -= needed_xp
+                        level += 1
+                        level_up = True
+                    else:
+                        break
+                
+                cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                               (level, xp, str(interaction.user.id)))
+                
+                if level_up:
+                    log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                    if log_chan: 
+                        await log_chan.send(f"🎉 {interaction.user.mention} reached Level **{level}**!")
             
             conn.commit()
             
@@ -506,23 +512,44 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            # Nachricht zusammenbauen
+            xp_text = f"(+50 XP)" if xp_gain > 0 else "(0 XP)"
+            msg = f"✅ Rated {rating} stars! {xp_text} Average: {avg}/5 ({count} ratings)"
             if level_up: msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
             await interaction.response.send_message(msg, ephemeral=True)
             
         except Exception as e: print(e)
 
     # Deine Buttons (Look unverändert!)
+    @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
+    async def b05(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 0.5)
+    
     @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
-    async def b1(self, i, b): await self.save_rating(i, 1.0)
+    async def b1(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 1.0)
+    
+    @discord.ui.button(label="1.5", style=discord.ButtonStyle.secondary)
+    async def b15(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 1.5)
+    
     @discord.ui.button(label="2.0", style=discord.ButtonStyle.secondary)
-    async def b2(self, i, b): await self.save_rating(i, 2.0)
+    async def b2(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 2.0)
+    
+    @discord.ui.button(label="2.5", style=discord.ButtonStyle.secondary)
+    async def b25(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 2.5)
+    
     @discord.ui.button(label="3.0", style=discord.ButtonStyle.secondary)
-    async def b3(self, i, b): await self.save_rating(i, 3.0)
+    async def b3(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 3.0)
+    
+    @discord.ui.button(label="3.5", style=discord.ButtonStyle.secondary)
+    async def b35(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 3.5)
+    
     @discord.ui.button(label="4.0", style=discord.ButtonStyle.secondary)
-    async def b4(self, i, b): await self.save_rating(i, 4.0)
-    @discord.ui.button(label="5.0", style=discord.ButtonStyle.secondary)
-    async def b5(self, i, b): await self.save_rating(i, 5.0)
+    async def b4(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 4.0)
+    
+    @discord.ui.button(label="4.5", style=discord.ButtonStyle.secondary)
+    async def b45(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 4.5)
+    
+    @discord.ui.button(label="5.0", style=discord.ButtonStyle.success)
+    async def b5(self, i: discord.Interaction, b: discord.ui.Button): await self.save_rating(i, 5.0)
 
 @bot.tree.command(name="rate", description="Search and rate movies")
 @app_commands.describe(movie_name="Name of the movie")
