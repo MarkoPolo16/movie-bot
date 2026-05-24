@@ -539,7 +539,7 @@ class RatingView(discord.ui.View):
     async def b4(self, i, b): await self.save_rating(i, 4.0)
     @discord.ui.button(label="4.5", style=discord.ButtonStyle.secondary)
     async def b45(self, i, b): await self.save_rating(i, 4.5)
-    @discord.ui.button(label="5.0", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="5.0", style=discord.ButtonStyle.secondary)
     async def b5(self, i, b): await self.save_rating(i, 5.0)
 
 @bot.tree.command(name="rate", description="Search and rate movies")
