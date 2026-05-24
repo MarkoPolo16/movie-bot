@@ -609,6 +609,31 @@ async def rank(interaction: discord.Interaction, member: discord.Member = None):
         print(f"Error in rank command: {e}")
         await interaction.followup.send(f"❌ An error occurred while loading the rank: {e}")
 
+
+@bot.tree.command(name="topxp", description="Show the top 10 users with the most XP")
+async def topxp(interaction: discord.Interaction):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            return await interaction.response.send_message("No XP data available.")
+        
+        embed = discord.Embed(title="🏆 Top 10 XP-Leaderboard", color=CYAN)
+        for idx, (uid, xp, lvl) in enumerate(results, 1):
+            member = interaction.guild.get_member(int(uid))
+            name = member.display_name if member else f"User {uid}"
+            embed.add_field(name=f"{idx}. {name}", value=f"Level: {lvl} | XP: {xp}", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"Error: {e}")
+
+
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
 @app_commands.autocomplete(name=director_autocomplete)
