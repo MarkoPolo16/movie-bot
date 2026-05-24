@@ -447,52 +447,70 @@ class RatingView(discord.ui.View):
         super().__init__(timeout=120)
         self.item_id = item_id
         self.item_title = item_title
-        self.is_tv = is_tv # Schaltet intern zwischen 'ratings' und 'tv_ratings' um
+        self.is_tv = is_tv  # Schalter: True für Serie, False für Film
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
             
-            # Tabellen-Logik im Hintergrund
+            # Dynamische Tabellenwahl
             table = "tv_ratings" if self.is_tv else "ratings"
             id_col = "tv_id" if self.is_tv else "movie_id"
             title_col = "tv_title" if self.is_tv else "movie_title"
             
-            # 1. Prüfen
-            cursor.execute(f"SELECT 1 FROM {table} WHERE user_id = %s AND {id_col} = %s", 
-                           (str(interaction.user.id), self.item_id))
-            already_rated = cursor.fetchone()
-            xp_gain = 0 if already_rated else 50
-            
-            # 2. Speichern
+            # 1. Rating speichern
             cursor.execute(f"""
                 INSERT INTO {table} (user_id, {id_col}, {title_col}, rating) 
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT(user_id, {id_col}) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.item_id, self.item_title, rating))
             
-            # 3. XP-Logik (bleibt gleich!)
-            if xp_gain > 0:
-                cursor.execute("INSERT INTO levels (user_id, xp, level) VALUES (%s, %s, 1) ON CONFLICT(user_id) DO UPDATE SET xp = levels.xp + %s", 
-                               (str(interaction.user.id), xp_gain, xp_gain))
+            # 2. XP hinzufügen
+            xp_gain = 50
+            cursor.execute("""
+                INSERT INTO levels (user_id, xp, level) 
+                VALUES (%s, %s, 1) 
+                ON CONFLICT(user_id) DO UPDATE 
+                SET xp = levels.xp + %s 
+                RETURNING xp, level
+            """, (str(interaction.user.id), xp_gain, xp_gain))
+            
+            xp, level = cursor.fetchone()
+            
+            # 3. Level-Up Logik (identisch)
+            level_up = False
+            while True:
+                needed_xp = int(100 * (1.2 ** (level - 1)))
+                if xp >= needed_xp:
+                    xp -= needed_xp
+                    level += 1
+                    level_up = True
+                else:
+                    break
+            
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                           (level, xp, str(interaction.user.id)))
+            
+            if level_up:
+                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                if log_chan: 
+                    await log_chan.send(f"🎉 {interaction.user.mention} reached Level **{level}**!")
             
             conn.commit()
             
-            # 4. Durchschnitt holen für den Text
+            # 4. Durchschnitt abrufen
             cursor.execute(f"SELECT AVG(rating), COUNT(*) FROM {table} WHERE {id_col}=%s", (self.item_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
             
-            # HIER BLEIBT DER LOOK GLEICH: 
-            # Die Nachricht erscheint genau wie vorher im Chat/Embed
-            msg = f"✅ Rated {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} ratings)"
-            await interaction.response.edit_message(content=msg, view=None)
+            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            if level_up: msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
+            await interaction.response.send_message(msg, ephemeral=True)
             
-        except Exception as e:
-            await interaction.response.send_message("Error saving rating.", ephemeral=True)
+        except Exception as e: print(e)
 
     # Deine Buttons (Look unverändert!)
     @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
@@ -744,54 +762,51 @@ async def tv_info(interaction: discord.Interaction, tv_name: str):
         await interaction.followup.send(f"Error: {e}")
 
 
-@bot.tree.command(name="ratetv", description="Rate a TV series")
-@app_commands.describe(tv_name="Name of the TV series to rate")
+@bot.tree.command(name="ratetv", description="Search and rate TV series")
+@app_commands.describe(tv_name="Name of the TV series")
 @app_commands.autocomplete(tv_name=tv_autocomplete)
 async def ratetv(interaction: discord.Interaction, tv_name: str):
-    await interaction.response.defer()
-    
+    await interaction.response.defer(ephemeral=True)
+    if not TMDB_API_KEY: return await interaction.followup.send("API Key missing.", ephemeral=True)
     try:
-        # Data cleaning
         clean_name = re.sub(r'\s\(\d{4}\)$', '', tv_name)
         year_match = re.search(r'\((\d{4})\)', tv_name)
         target_year = year_match.group(1) if year_match else None
         
-        # 2. Get data from API
+        # API Abfrage für Serien
         data = requests.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={clean_name}").json()
-        if not data.get("results"): 
-            return await interaction.followup.send("❌ No series found.", ephemeral=True)
+        if not data.get("results"): return await interaction.followup.send("No series found.", ephemeral=True)
         
         series = next((s for s in data["results"] if s.get("first_air_date", "")[:4] == target_year), data["results"][0])
         
-        # NEU: Hole Details für Creator
+        # --- CREATOR ABFRAGEN (wie Regisseur bei Filmen) ---
         details = requests.get(f"https://api.themoviedb.org/3/tv/{series['id']}?api_key={TMDB_API_KEY}").json()
         creators = details.get("created_by", [])
         creator_name = creators[0]["name"] if creators else "N/A"
         
-        # 3. Database check
+        # Datenbank-Abfrage
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE tv_id=%s", (series["id"],))
         avg, count = cursor.fetchone()
         avg = round(avg or 0.0, 1)
+        
+        cursor.execute("SELECT rating FROM tv_ratings WHERE tv_id=%s AND user_id=%s", (series["id"], str(interaction.user.id)))
+        user_rating = cursor.fetchone()
         cursor.close()
         conn.close()
 
-        # 4. Create Embed (inkl. Creator)
-        embed = discord.Embed(title=f"⭐ Rate: {series['name']}", description="Click a button to rate the series.", color=CYAN)
-        embed.add_field(name="📅 First Air Date", value=series.get("first_air_date", "N/A")[:4])
+        # Embed erstellen (Layout exakt wie bei /rate)
+        embed = discord.Embed(title=f"📺 {series['name']}", description=series.get('overview', '')[:1000], color=CYAN)
+        embed.add_field(name="📅 Year", value=series.get("first_air_date", "N/A")[:4])
         embed.add_field(name="✍️ Creator", value=creator_name)
-        embed.add_field(name="⭐ Current Server Avg", value=f"{avg}/5 ({count} ratings)")
-        if series.get("poster_path"): 
-            embed.set_image(url=f"https://image.tmdb.org/t/p/w500{series['poster_path']}")
+        embed.add_field(name="⭐ Average Rating", value=f"{avg}/5 ({count} ratings)")
+        embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
+        if series.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{series['poster_path']}")
         
-        view = RatingView(item_id=series['id'], item_title=series['name'], is_tv=True)
-        
-        await interaction.followup.send(embed=embed, view=view)
-        
-    except Exception as e:
-        print(f"Error in ratetv: {e}")
-        await interaction.followup.send(f"❌ An error occurred: {e}")
+        # View mit is_tv=True
+        await interaction.followup.send(embed=embed, view=RatingView(series["id"], series["name"], is_tv=True), ephemeral=True)
+    except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
 @bot.tree.command(name="avg", description="Show your average rating and stats")
