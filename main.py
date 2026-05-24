@@ -151,6 +151,19 @@ def is_admin_or_owner():
         raise commands.CheckFailure("NO_PERMISSION")
     return commands.check(predicate)
 
+def search_tv_in_api(query: str):
+    # API-Key aus der Variable nutzen
+    key = os.getenv("TMDB_API_KEY")
+    url = f"https://api.themoviedb.org/3/search/tv?api_key={key}&query={query}"
+    
+    response = requests.get(url)
+    data = response.json()
+    
+    # Gibt eine Liste von Dictionaries zurück, jedes mit 'name'
+    if 'results' in data:
+        return [{'name': show['name']} for show in data['results']]
+    return []
+
 # ==========================================
 # BUTTON MENUS (RULES & GENRES)
 # ==========================================
@@ -413,6 +426,21 @@ async def actor_autocomplete(interaction: discord.Interaction, current: str):
                 choices.append(app_commands.Choice(name=p['name'], value=p['name']))
         return choices
     except: return []
+
+
+async def tv_autocomplete(interaction: discord.Interaction, current: str):
+    if not current:
+        return [] # Wenn nichts getippt wurde, keine Vorschläge
+    
+    # Hier rufst du deine API für die Suche auf
+    # WICHTIG: Ersetze das hier durch deine API-Logik (tmdb search)
+    results = search_tv_in_api(current) 
+    
+    # Wir geben die ersten 25 Ergebnisse zurück (Discord Limit)
+    return [
+        discord.app_commands.Choice(name=show['name'], value=show['name'])
+        for show in results[:25]
+    ]
 
 class RatingView(discord.ui.View):
     def __init__(self, item_id: int, item_title: str, is_tv: bool = False):
@@ -722,56 +750,59 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
 
-import requests
 
 def get_tv_from_api(name):
-    # Ersetze 'DEIN_API_KEY' durch deinen echten Key
-    api_key = "DEIN_API_KEY"
-    url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={name}"
+    # API-Key aus deiner Umgebungsvariable
+    api_key = os.getenv("TMDB_API_KEY")
+    # Zuerst suchen wir nach der ID, damit wir die Details bekommen
+    search_url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={name}"
     
-    response = requests.get(url)
+    response = requests.get(search_url)
     data = response.json()
     
-    # Prüfen, ob wir Ergebnisse gefunden haben
-    if data['results']:
-        # Wir nehmen das erste Ergebnis aus der Liste
-        first_show = data['results'][0]
+    if data.get('results'):
+        # Nimm das erste Ergebnis
+        show = data['results'][0]
         return {
-            'id': first_show['id'],
-            'name': first_show['name'],
-            'overview': first_show['overview']
+            'id': show['id'],
+            'name': show['name'],
+            'overview': show['overview']
         }
-    else:
-        return None
+    return None
 
 
-
-@bot.tree.command(name="tv", description="Zeige Informationen zu einer TV-Serie")
+@bot.tree.command(name="tv", description="Suche eine TV-Serie")
+@app_commands.autocomplete(name=tv_autocomplete) # Hier wird das Autocomplete registriert
 async def tv(interaction: discord.Interaction, name: str):
-    tv_data = get_tv_from_api(name) # Deine Funktion
+    # 1. Daten holen (da 'name' jetzt validiert ist)
+    tv_data = get_tv_from_api(name) 
     
     if not tv_data:
         await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
         return
-
+        
+    # 2. Embed bauen
     embed = discord.Embed(title=tv_data['name'], description=tv_data['overview'], color=CYAN)
-    # ... hier restliche Felder wie Jahr, Genre etc. ...
+    # ... hier restliche Embed-Felder ...
     
+    # 3. Senden
     await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="ratetv", description="Bewerte eine TV-Serie")
+@app_commands.autocomplete(name=tv_autocomplete) # Hier hängst du es dran
 async def ratetv(interaction: discord.Interaction, name: str):
-    # Wir suchen die Serie erst, um die ID und den Titel für die View zu bekommen
+    # 1. Daten holen (da der User aus der Liste gewählt hat, passt 'name' perfekt)
     tv_data = get_tv_from_api(name)
     
     if not tv_data:
         await interaction.response.send_message("Serie nicht gefunden!", ephemeral=True)
         return
 
+    # 2. Embed bauen
     embed = discord.Embed(title=f"Bewerte: {tv_data['name']}", description="Klicke auf einen Button, um zu bewerten.", color=CYAN)
     
-    # Hier fügen wir die View mit den Buttons hinzu
+    # 3. View mit is_tv=True für die Buttons
     view = RatingView(item_id=tv_data['id'], item_title=tv_data['name'], is_tv=True)
     
     await interaction.response.send_message(embed=embed, view=view)
