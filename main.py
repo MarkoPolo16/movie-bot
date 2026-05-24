@@ -418,7 +418,7 @@ class RatingView(discord.ui.View):
             if level_up:
                 log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
                 if log_chan: 
-                    await log_chan.send(f"🎉 {interaction.user.mention} hat durch eine Bewertung Level **{level}** erreicht!")
+                    await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
             
             conn.commit()
             
@@ -431,7 +431,7 @@ class RatingView(discord.ui.View):
             
             msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
             if level_up:
-                msg += f"\n🎉 Glückwunsch! Du bist jetzt Level **{level}**!"
+                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
             
             await interaction.response.send_message(msg, ephemeral=True)
             
