@@ -834,20 +834,24 @@ async def ratetv(interaction: discord.Interaction, tv_name: str):
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 # Stelle sicher, dass 'bot' hier dein Bot-Objekt ist (z.B. bot = commands.Bot(...))
-@bot.tree.command(name="avg", description="Show your average rating and stats")
-async def avg(interaction: discord.Interaction):
+@bot.tree.command(name="avg", description="Show your or another user's average rating and stats")
+@app_commands.describe(member="Optional: User to check the stats for")
+async def avg(interaction: discord.Interaction, member: discord.Member = None):
     await interaction.response.defer(ephemeral=False)
+    
+    # Bestimme, ob man eigene Stats oder die eines anderen sehen will
+    target = member or interaction.user
     
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
             
-        # Stats Filme
-        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE user_id = %s", (str(interaction.user.id),))
+        # Stats Filme für den target user
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE user_id = %s", (str(target.id),))
         avg_movie, count_movie = cursor.fetchone()
         
-        # Stats Serien
-        cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE user_id = %s", (str(interaction.user.id),))
+        # Stats Serien für den target user
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM tv_ratings WHERE user_id = %s", (str(target.id),))
         avg_tv, count_tv = cursor.fetchone()
             
         cursor.close()
@@ -856,13 +860,13 @@ async def avg(interaction: discord.Interaction):
         total_count = (count_movie or 0) + (count_tv or 0)
         
         if total_count == 0:
-            await interaction.followup.send("You haven't rated any movies or TV shows yet.", ephemeral=True)
+            await interaction.followup.send(f"{target.display_name} hasn't rated any movies or TV shows yet.", ephemeral=True)
         else:
             m_val = round(avg_movie or 0.0, 3)
             t_val = round(avg_tv or 0.0, 3)
             
             await interaction.followup.send(
-                f"📊 **Statistics for {interaction.user.mention}:**\n"
+                f"📊 **Statistics for {target.mention}:**\n"
                 f"Movies rated: {count_movie or 0}\n"
                 f"TV shows rated: {count_tv or 0}\n"
                 f"Average movie rating: {m_val:.3f}/5 ⭐\n"
@@ -872,7 +876,7 @@ async def avg(interaction: discord.Interaction):
                 
     except Exception as e:
         print(f"Error /avg: {e}")
-        await interaction.followup.send("An error occurred while fetching your statistics.", ephemeral=True)
+        await interaction.followup.send("An error occurred while fetching the statistics.", ephemeral=True)
 
 @bot.tree.command(name="toplist", description="Showing the top 10 reviewers (Movies + TV)")
 async def toplist(interaction: discord.Interaction):
