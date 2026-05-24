@@ -878,6 +878,46 @@ async def avg(interaction: discord.Interaction, member: discord.Member = None):
         print(f"Error /avg: {e}")
         await interaction.followup.send("An error occurred while fetching the statistics.", ephemeral=True)
 
+
+@bot.tree.command(name="film", description="Show movie information for all")
+@app_commands.describe(movie_name="Name of the Movie")
+@app_commands.autocomplete(movie_name=movie_autocomplete)
+async def film_info(interaction: discord.Interaction, movie_name: str):
+    await interaction.response.defer()
+    try:
+        clean_name = re.sub(r'\s\(\d{4}\)$', '', movie_name)
+        year_match = re.search(r'\((\d{4})\)', movie_name)
+        target_year = year_match.group(1) if year_match else None
+        
+        # 1. Film suchen
+        data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={clean_name}").json()
+        if not data.get("results"): return await interaction.followup.send("Kein Film gefunden.")
+        
+        movie = next((m for m in data["results"] if m.get("release_date", "")[:4] == target_year), data["results"][0])
+        
+        # --- NEU: Director abfragen ---
+        credits_data = requests.get(f"https://api.themoviedb.org/3/movie/{movie['id']}/credits?api_key={TMDB_API_KEY}").json()
+        director = next((c["name"] for c in credits_data.get("crew", []) if c["job"] == "Director"), "N/A")
+        
+        # 2. Datenbank-Stats
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (movie["id"],))
+        avg, count = cursor.fetchone()
+        avg = round(avg or 0.0, 1)
+        cursor.close()
+        conn.close()
+
+        # 3. Embed mit Director-Feld
+        embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
+        embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
+        embed.add_field(name="🎥 Director", value=director)
+        embed.add_field(name="⭐ Server Average", value=f"{avg}/5 ({count} ratings)")
+        if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e: await interaction.followup.send(f"Error: {e}")
+
 @bot.tree.command(name="toplist", description="Showing the top 10 reviewers (Movies + TV)")
 async def toplist(interaction: discord.Interaction):
     try:
