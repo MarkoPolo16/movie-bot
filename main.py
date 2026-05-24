@@ -420,7 +420,7 @@ class RatingView(discord.ui.View):
         self.movie_id = movie_id
         self.movie_title = movie_title
 
-    async def save_rating(self, interaction: discord.Interaction, rating: float, button: discord.ui.Button):
+    async def save_rating(self, interaction: discord.Interaction, rating: float):
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
@@ -482,53 +482,37 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} Ratings)"
+            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
             if level_up:
                 msg += f"\n🎉 Congrats! You reached Level **{level}**!"
-
-
+                
             
-            # FARB-LOGIK
-            for child in self.children:
-                child.style = discord.ButtonStyle.secondary
-            button.style = discord.ButtonStyle.success
-
-            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} Ratings)"
-            if level_up:
-                msg += f"\n🎉 Congrats! You reached Level **{level}**!"
-
-            embed = interaction.message.embeds[0]
-            
-            # Füge das msg als neues Feld unten an (oder überschreibe ein bestehendes)
-            # Hier: Wir fügen es als Feld hinzu, damit es sauber aussieht
-            embed.add_field(name="Status", value=msg, inline=False)
-            
-            # Antwort bearbeiten, damit die Farbe aktualisiert wird
-            await interaction.response.edit_message(content=msg, view=self)
+            # WICHTIG: Das ist die Nachricht, die nur du siehst (ephemeral=True)
+            await interaction.response.send_message(msg, ephemeral=True)
             
         except Exception as e:
             print(f"Error: {e}")
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
-    async def b05(self, i, b): await self.save_rating(i, 0.5, b)
+    async def b05(self, i, b): await self.save_rating(i, 0.5)
     @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
-    async def b1(self, i, b): await self.save_rating(i, 1.0, b)
+    async def b1(self, i, b): await self.save_rating(i, 1.0)
     @discord.ui.button(label="1.5", style=discord.ButtonStyle.secondary)
-    async def b15(self, i, b): await self.save_rating(i, 1.5, b)
+    async def b15(self, i, b): await self.save_rating(i, 1.5)
     @discord.ui.button(label="2.0", style=discord.ButtonStyle.secondary)
-    async def b2(self, i, b): await self.save_rating(i, 2.0, b)
+    async def b2(self, i, b): await self.save_rating(i, 2.0)
     @discord.ui.button(label="2.5", style=discord.ButtonStyle.secondary)
-    async def b25(self, i, b): await self.save_rating(i, 2.5, b)
+    async def b25(self, i, b): await self.save_rating(i, 2.5)
     @discord.ui.button(label="3.0", style=discord.ButtonStyle.secondary)
-    async def b3(self, i, b): await self.save_rating(i, 3.0, b)
+    async def b3(self, i, b): await self.save_rating(i, 3.0)
     @discord.ui.button(label="3.5", style=discord.ButtonStyle.secondary)
-    async def b35(self, i, b): await self.save_rating(i, 3.5, b)
+    async def b35(self, i, b): await self.save_rating(i, 3.5)
     @discord.ui.button(label="4.0", style=discord.ButtonStyle.secondary)
-    async def b4(self, i, b): await self.save_rating(i, 4.0, b)
+    async def b4(self, i, b): await self.save_rating(i, 4.0)
     @discord.ui.button(label="4.5", style=discord.ButtonStyle.secondary)
-    async def b45(self, i, b): await self.save_rating(i, 4.5, b)
+    async def b45(self, i, b): await self.save_rating(i, 4.5)
     @discord.ui.button(label="5.0", style=discord.ButtonStyle.secondary)
-    async def b5(self, i, b): await self.save_rating(i, 5.0, b)
+    async def b5(self, i, b): await self.save_rating(i, 5.0)
 
 @bot.tree.command(name="rate", description="Search and rate movies")
 @app_commands.describe(movie_name="Name of the movie")
