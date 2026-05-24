@@ -544,7 +544,8 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         conn.close()
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
-        embed.add_field(name="📅 Year | Director", value=f"{movie.get('release_date', 'N/A')[:4]} | {director}") # Hier kombiniert
+        embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
+        embed.add_field(name="🎥 Director", value=director)
         embed.add_field(name="⭐ Average Rating", value=f"{avg}/5 ({count} ratings)")
         embed.add_field(name="👤 Your Rating", value=f"{user_rating[0] if user_rating else 'None'}/5")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
@@ -685,7 +686,7 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
 
         embed = discord.Embed(title=f"🎬 {movie['title']}", description=movie.get('overview', '')[:1000], color=CYAN)
         embed.add_field(name="📅 Year", value=movie.get("release_date", "N/A")[:4])
-        embed.add_field(name="👤 Director", value=director) # Neues Feld für den Director
+        embed.add_field(name="🎥 Director", value=director)
         embed.add_field(name="⭐ Server Average", value=f"{avg}/5 ({count} ratings)")
         if movie.get("poster_path"): embed.set_image(url=f"https://image.tmdb.org/t/p/w500{movie['poster_path']}")
         
