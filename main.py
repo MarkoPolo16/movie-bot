@@ -422,8 +422,9 @@ class RatingView(discord.ui.View):
         self.movie_title = movie_title
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
-        # 1. Sofortiges Defer, um das Zeitlimit zu umgehen
-        await interaction.response.defer(ephemeral=True)
+        # Wir benutzen kein defer(ephemeral=True), um edit_message nutzen zu können
+        # Wenn es zu lange dauert, lassen wir die Nachricht einfach stehen und ändern sie dann.
+        await interaction.response.defer()
         
         try:
             conn = psycopg2.connect(DATABASE_URL)
@@ -477,13 +478,17 @@ class RatingView(discord.ui.View):
             msg = f"✅ Rated {rating} stars! ({xp_gain} XP) Average: {avg}/5 ({count} ratings)"
             if level_up: msg += f"\n🎉 Congratulations! Level **{level}**!"
             
-            # HIER IST DIE ÄNDERUNG:
-            # Wir bearbeiten die existierende Antwort anstatt eine neue Nachricht zu senden
+            # HIER ÄNDERUNG: Wir überschreiben die bestehende Nachricht 
+            # Das ist die sauberste Methode ohne Duplikate.
             await interaction.edit_original_response(content=msg, view=self)
             
         except Exception as e:
             print(f"Error: {e}")
-            await interaction.followup.send(f"❌ Fehler: {str(e)}", ephemeral=True)
+            # Falls das Editieren fehlschlägt, versuchen wir es als Followup
+            try:
+                await interaction.followup.send(f"❌ Fehler beim Speichern.", ephemeral=True)
+            except:
+                pass
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
