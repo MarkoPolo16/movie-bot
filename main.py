@@ -416,79 +416,75 @@ async def actor_autocomplete(interaction: discord.Interaction, current: str):
 
 class RatingView(discord.ui.View):
     def __init__(self, movie_id: int, movie_title: str):
-        # timeout=None verhindert, dass die Buttons nach 2 Minuten ungültig werden
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self.movie_id = movie_id
         self.movie_title = movie_title
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
-        # Wir benutzen kein defer(ephemeral=True), um edit_message nutzen zu können
-        # Wenn es zu lange dauert, lassen wir die Nachricht einfach stehen und ändern sie dann.
-        await interaction.response.defer()
-        
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
-            
-            # 2. Prüfen, ob der User den Film schon bewertet hat
             cursor.execute("SELECT 1 FROM ratings WHERE user_id = %s AND movie_id = %s", 
                            (str(interaction.user.id), self.movie_id))
             already_rated = cursor.fetchone()
+            xp_gain = 0 if already_rated else 50
+
             
-            # 3. Rating in DB speichern/aktualisieren
+            # 1. Rating speichern
             cursor.execute("""
-                INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
-                ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+            INSERT INTO ratings (user_id, movie_id, movie_title, rating) VALUES (%s, %s, %s, %s)
+            ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             
-            xp_gain = 50 if not already_rated else 0
-            level_up = False
-            xp = 0
-            level = 1
+            # 2. XP hinzufügen und aktuelle Werte abrufen
+            xp_gain = 50
+            cursor.execute("""
+                INSERT INTO levels (user_id, xp, level) 
+                VALUES (%s, %s, 1) 
+                ON CONFLICT(user_id) DO UPDATE 
+                SET xp = levels.xp + %s 
+                RETURNING xp, level
+            """, (str(interaction.user.id), xp_gain, xp_gain))
             
-            # 4. XP-Logik
-            if xp_gain > 0:
-                cursor.execute("SELECT xp, level FROM levels WHERE user_id = %s", (str(interaction.user.id),))
-                res = cursor.fetchone()
-                if res: xp, level = res
-                xp += xp_gain
-                
-                while True:
-                    needed_xp = int(100 * (1.2 ** (level - 1)))
-                    if xp >= needed_xp:
-                        xp -= needed_xp
-                        level += 1
-                        level_up = True
-                    else: break
-                
-                cursor.execute("""
-                    INSERT INTO levels (user_id, xp, level) 
-                    VALUES (%s, %s, %s) 
-                    ON CONFLICT(user_id) DO UPDATE 
-                    SET xp = EXCLUDED.xp, level = EXCLUDED.level
-                """, (str(interaction.user.id), xp, level))
+            xp, level = cursor.fetchone()
+            
+            # 3. Level-Up Logik (While-Schleife wie bei on_message)
+            level_up = False
+            while True:
+                needed_xp = int(100 * (1.2 ** (level - 1)))
+                if xp >= needed_xp:
+                    xp -= needed_xp
+                    level += 1
+                    level_up = True
+                else:
+                    break
+            
+            # Neue Werte in DB speichern
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
+                           (level, xp, str(interaction.user.id)))
+            
+            # Benachrichtigung, falls Level-Up
+            if level_up:
+                log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
+                if log_chan: 
+                    await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
             
             conn.commit()
+            
+            # 4. Durchschnitt abrufen
             cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rated {rating} stars! ({xp_gain} XP) Average: {avg}/5 ({count} ratings)"
-            if level_up: msg += f"\n🎉 Congratulations! Level **{level}**!"
+            msg = f"✅ Rated {rating} stars! (+50 XP) Average: {avg}/5 ({count} ratings)"
+            if level_up:
+                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
             
-            # HIER ÄNDERUNG: Wir überschreiben die bestehende Nachricht 
-            # Das ist die sauberste Methode ohne Duplikate.
-            await interaction.edit_original_response(content=msg, view=self)
+            await interaction.response.send_message(msg, ephemeral=True)
             
-        except Exception as e:
-            print(f"Error: {e}")
-            # Falls das Editieren fehlschlägt, versuchen wir es als Followup
-            try:
-                await interaction.followup.send(f"❌ Fehler beim Speichern.", ephemeral=True)
-            except:
-                pass
+        except Exception as e: print(e)
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
