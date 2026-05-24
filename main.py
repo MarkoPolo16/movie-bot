@@ -4,7 +4,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
-from PIL import Image, ImageDraw, ImageFont # Neu für RankCard
+from PIL import Image, ImageDraw, ImageFont, ImageOps # Neu für RankCard
 import io
 
 load_dotenv()
@@ -19,12 +19,34 @@ CYAN = discord.Color.from_rgb(0, 255, 255)
 # RANK CARD FUNKTION
 # ==========================================
 async def create_rank_card(member: discord.Member, level: int, xp: int):
+    # 1. Basis-Bild laden
     bg = Image.open("level-bg.jpg").convert("RGBA").resize((800, 200))
     overlay = Image.new('RGBA', (800, 200), (0, 0, 0, 120))
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
-    # Schriftarten definieren
+    # 2. Profilbild herunterladen und als Kreis zuschneiden
+    try:
+        # Avatar Asset lesen
+        avatar_asset = member.display_avatar.replace(format="png", size=128)
+        avatar_buffer = io.BytesIO(await avatar_asset.read())
+        avatar = Image.open(avatar_buffer).convert("RGBA").resize((150, 150))
+
+        # Maske für den Kreis erstellen
+        mask = Image.new('L', (150, 150), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, 150, 150), fill=255)
+        
+        # Kreis-Ausschnitt anwenden
+        avatar = ImageOps.fit(avatar, (150, 150), centering=(0.5, 0.5))
+        avatar.putalpha(mask)
+        
+        # Avatar auf das Hintergrundbild kleben (Position x=25, y=25)
+        bg.paste(avatar, (25, 25), avatar)
+    except Exception as e:
+        print(f"Avatar error: {e}")
+
+    # 3. Schriftarten
     try:
         font_name = ImageFont.truetype("ARIAL.TTF", 35) 
         font_level = ImageFont.truetype("ARIAL.TTF", 30)
@@ -32,17 +54,16 @@ async def create_rank_card(member: discord.Member, level: int, xp: int):
         font_name = ImageFont.load_default()
         font_level = ImageFont.load_default()
 
-    # --- NEUE LOGIK: XP-Berechnung identisch zu on_message ---
+    # 4. XP-Logik & Fortschrittsbalken
     needed_xp = int(100 * (1.2 ** (level - 1)))
     progress = min(xp / needed_xp, 1.0)
     
-    # Fortschrittsbalken zeichnen
+    # Positionen für den Balken und Text (leicht nach rechts verschoben wegen des Avatars)
     bar_x1, bar_y1 = 200, 140
     bar_x2, bar_y2 = 700, 170
-    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50)) # Hintergrund
-    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255)) # Balken
+    draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=(50, 50, 50))
+    draw.rectangle([bar_x1, bar_y1, bar_x1 + (bar_x2 - bar_x1) * progress, bar_y2], fill=(0, 255, 255))
 
-    # Texte zeichnen
     draw.text((200, 15), f"{member.display_name}", font=font_name, fill=(255, 255, 255))
     draw.text((200, 80), f"Level: {level} | XP: {xp}/{needed_xp}", font=font_level, fill=(255, 255, 255))
 
