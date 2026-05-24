@@ -926,14 +926,13 @@ async def top10films(interaction: discord.Interaction):
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         
-        # Abfrage: Die 10 besten Filme basierend auf dem Durchschnitt (min. 1 Rating)
-        # Wir sortieren nach Durchschnitt absteigend
+        # Abfrage: Sortierung nach Bewertung (absteigend) und dann nach Anzahl der Votes (absteigend)
         cursor.execute("""
             SELECT movie_title, AVG(rating), COUNT(*) 
             FROM ratings 
             GROUP BY movie_title 
             HAVING COUNT(*) > 0 
-            ORDER BY AVG(rating) DESC 
+            ORDER BY AVG(rating) DESC, COUNT(*) DESC 
             LIMIT 10
         """)
         
@@ -949,6 +948,7 @@ async def top10films(interaction: discord.Interaction):
         
         description = ""
         for i, (title, avg, count) in enumerate(top_movies, 1):
+            # Zeigt den Durchschnitt mit 2 Nachkommastellen an
             description += f"{i}. **{title}** - {avg:.2f}/5 ⭐ ({count} ratings)\n"
             
         embed.description = description
