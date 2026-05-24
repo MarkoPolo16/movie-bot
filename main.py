@@ -422,14 +422,14 @@ class RatingView(discord.ui.View):
         self.movie_title = movie_title
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
-        # 1. Sofortiges Defer, um das 3-Sekunden-Limit zu umgehen
+        # 1. Sofortiges Defer, um das Zeitlimit zu umgehen
         await interaction.response.defer(ephemeral=True)
         
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
             
-            # 2. Prüfen, ob der User den Film schon bewertet hat (SELECT 1 statt SELECT id)
+            # 2. Prüfen, ob der User den Film schon bewertet hat
             cursor.execute("SELECT 1 FROM ratings WHERE user_id = %s AND movie_id = %s", 
                            (str(interaction.user.id), self.movie_id))
             already_rated = cursor.fetchone()
@@ -440,70 +440,50 @@ class RatingView(discord.ui.View):
                 ON CONFLICT(user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
             """, (str(interaction.user.id), self.movie_id, self.movie_title, rating))
             
-            # XP nur vergeben, wenn es die erste Bewertung ist
             xp_gain = 50 if not already_rated else 0
-            
             level_up = False
             xp = 0
             level = 1
             
-            # 4. XP-Logik (nur bei Erstbewertung)
+            # 4. XP-Logik
             if xp_gain > 0:
-                # Aktuelle Werte laden
                 cursor.execute("SELECT xp, level FROM levels WHERE user_id = %s", (str(interaction.user.id),))
                 res = cursor.fetchone()
-                if res:
-                    xp, level = res
-                
+                if res: xp, level = res
                 xp += xp_gain
                 
-                # Level-Up Berechnung
                 while True:
                     needed_xp = int(100 * (1.2 ** (level - 1)))
                     if xp >= needed_xp:
                         xp -= needed_xp
                         level += 1
                         level_up = True
-                    else:
-                        break
+                    else: break
                 
-                # In DB speichern
                 cursor.execute("""
                     INSERT INTO levels (user_id, xp, level) 
                     VALUES (%s, %s, %s) 
                     ON CONFLICT(user_id) DO UPDATE 
                     SET xp = EXCLUDED.xp, level = EXCLUDED.level
                 """, (str(interaction.user.id), xp, level))
-                
-                # Log-Nachricht bei Level-Up
-                if level_up:
-                    log_chan = bot.get_channel(LEVEL_LOG_CHANNEL_ID)
-                    if log_chan: 
-                        await log_chan.send(f"🎉 {interaction.user.mention} has reached Level **{level}** through a movie rating!")
             
             conn.commit()
-            
-            # 5. Durchschnitt der Bewertungen holen
             cursor.execute("SELECT AVG(rating), COUNT(*) FROM ratings WHERE movie_id=%s", (self.movie_id,))
             avg, count = cursor.fetchone()
             avg = round(avg or 0.0, 1)
             cursor.close()
             conn.close()
             
-            # 6. Nachricht vorbereiten
             msg = f"✅ Rated {rating} stars! ({xp_gain} XP) Average: {avg}/5 ({count} ratings)"
-            if level_up:
-                msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
+            if level_up: msg += f"\n🎉 Congratulations! Level **{level}**!"
             
-            # 7. Senden mit view=self, damit die Buttons bestehen bleiben
-            await interaction.followup.send(msg, view=self)
+            # HIER IST DIE ÄNDERUNG:
+            # Wir bearbeiten die existierende Antwort anstatt eine neue Nachricht zu senden
+            await interaction.edit_original_response(content=msg, view=self)
             
         except Exception as e:
-            print(f"Error saving rating: {e}")
-            try:
-                await interaction.followup.send(f"❌ Error saving rating. Reason: {str(e)}", ephemeral=True)
-            except:
-                pass
+            print(f"Error: {e}")
+            await interaction.followup.send(f"❌ Fehler: {str(e)}", ephemeral=True)
 
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
     async def b05(self, i, b): await self.save_rating(i, 0.5)
