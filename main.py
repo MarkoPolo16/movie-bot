@@ -487,15 +487,21 @@ class RatingView(discord.ui.View):
                 msg += f"\n🎉 Congrats! You reached Level **{level}**!"
 
 
-
-            embed = interaction.message.embeds[0]
-
-            embed.add_field(name="Status", value=msg, inline=False)
             
             # FARB-LOGIK
             for child in self.children:
                 child.style = discord.ButtonStyle.secondary
             button.style = discord.ButtonStyle.success
+
+            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} Ratings)"
+            if level_up:
+                msg += f"\n🎉 Congrats! You reached Level **{level}**!"
+
+            embed = interaction.message.embeds[0]
+            
+            # Füge das msg als neues Feld unten an (oder überschreibe ein bestehendes)
+            # Hier: Wir fügen es als Feld hinzu, damit es sauber aussieht
+            embed.add_field(name="Status", value=msg, inline=False)
             
             # Antwort bearbeiten, damit die Farbe aktualisiert wird
             await interaction.response.edit_message(content=msg, view=self)
