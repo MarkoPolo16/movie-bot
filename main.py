@@ -496,7 +496,7 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 @bot.tree.command(name="rank", description="Check your current level")
 async def rank(interaction: discord.Interaction):
     if interaction.channel.id != RANK_CHANNEL_ID:
-        return await interaction.response.send_message(f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", ephemeral=True)
+        return await interaction.response.send_message(f"❌ Please suse this command in <#{RANK_CHANNEL_ID}>.", ephemeral=True)
     
     await interaction.response.defer()
     
