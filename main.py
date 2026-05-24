@@ -539,9 +539,7 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 
 @bot.tree.command(name="rank", description="Check the rank of you or another user")
 @app_commands.describe(member="Optional: User to check the rank for")
-@bot.tree.command(name="rank", description="Check the rank of you or another user")
-@app_commands.describe(member="Optional: User to check the rank for")
-async def rank(interaction, member: discord.Member = None):
+async def rank(interaction: discord.Interaction, member: discord.Member = None):
     # 1. Kanal-Prüfung
     if interaction.channel.id != RANK_CHANNEL_ID:
         return await interaction.response.send_message(
@@ -549,7 +547,7 @@ async def rank(interaction, member: discord.Member = None):
             ephemeral=True
         )
     
-    # 2. Sofort defer, damit der Bot Zeit für die Bild-Generierung hat
+    # 2. Sofort defer
     await interaction.response.defer()
     
     target = member or interaction.user
@@ -569,7 +567,7 @@ async def rank(interaction, member: discord.Member = None):
         
         xp, level = res
         
-        # 4. Level-Update Logik (falls XP "offen" waren)
+        # 4. Level-Update Logik
         level_up = False
         while True:
             needed_xp = int(100 * (1.2 ** (level - 1)))
