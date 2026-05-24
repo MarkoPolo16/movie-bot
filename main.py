@@ -288,6 +288,29 @@ async def purge_cmd(ctx, amount: int):
         await ctx.channel.purge(limit=amount)
     except Exception as e: print(f"Purge Error: {e}")
 
+@bot.command(name="addxp")
+@is_admin_or_owner() # Nutzt dein vorhandenes Berechtigungssystem
+async def addxp(ctx, member: discord.Member, amount: int):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        # XP hinzufügen
+        cursor.execute("""
+            INSERT INTO levels (user_id, xp, level) 
+            VALUES (%s, %s, 1) 
+            ON CONFLICT(user_id) DO UPDATE 
+            SET xp = levels.xp + %s
+        """, (str(member.id), amount, amount))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        await ctx.send(f"✅ {amount} XP added to {member.mention}!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding XP: {e}")
+
 @bot.command(name="timeout")
 @is_admin_or_owner()
 async def timeout_cmd(ctx, member: discord.Member, seconds: int, *, reason: str = "No reason provided"):
