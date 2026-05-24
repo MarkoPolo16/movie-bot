@@ -520,7 +520,11 @@ class RatingView(discord.ui.View):
             if level_up:
                 msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
             
-            await interaction.response.send_message(msg, ephemeral=True)
+            # FIX FÜR 10062 ERROR:
+            try:
+                await interaction.response.send_message(msg, ephemeral=True)
+            except discord.errors.InteractionResponded:
+                await interaction.followup.send(msg, ephemeral=True)
             
         except Exception as e: print(e)
 
