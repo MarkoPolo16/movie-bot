@@ -683,6 +683,41 @@ async def film_info(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed)
     except Exception as e: await interaction.followup.send(f"Error: {e}")
 
+
+@app_commands.command(name="avg", description="Shows your personal average rating for all rated movies")
+async def avg_rating(self, interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+        
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+            
+        # Durchschnitt und Anzahl der bewerteten Filme für den User abrufen
+        cursor.execute("""
+            SELECT AVG(rating), COUNT(*) 
+            FROM ratings 
+            WHERE user_id = %s
+        """, (str(interaction.user.id),))
+            
+        avg, count = cursor.fetchone()
+        cursor.close()
+        conn.close()
+            
+        if count == 0:
+            await interaction.followup.send("You haven't rated any movies yet.", ephemeral=True)
+        else:
+            avg = round(avg or 0.0, 1)
+            await interaction.followup.send(
+                f"📊 **Your Statistics:**\n"
+                f"Movies rated: {count}\n"
+                f"Average rating: {avg}/5 ⭐", 
+                ephemeral=True
+            )
+                
+    except Exception as e:
+        print(f"Error /avg: {e}")
+        await interaction.followup.send("An error occurred while fetching your statistics.", ephemeral=True)
+
 @bot.tree.command(name="toplist", description="Showing the top 10 reviewers")
 async def toplist(interaction: discord.Interaction):
     try:
