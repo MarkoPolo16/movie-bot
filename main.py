@@ -482,53 +482,41 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
             
-            # Button-Farben anpassen
+            # Buttons farblich anpassen
             for child in self.children:
                 child.style = discord.ButtonStyle.secondary
-                child.disabled = True
             button.style = discord.ButtonStyle.success
             
-            msg = f"✅ Rating Saved {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
+            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
             if level_up:
                 msg += f"\n🎉 Congrats! You reached Level **{level}**!"
             
+            # Antwort bearbeiten, damit sich die Button-Farben ändern
             await interaction.response.edit_message(content=msg, view=self)
             
         except Exception as e:
             print(f"Error: {e}")
-            await interaction.response.send_message("An error occurred.", ephemeral=True)
 
-    # Stelle sicher, dass deine Buttons alle Style 'secondary' haben
     @discord.ui.button(label="0.5", style=discord.ButtonStyle.secondary)
-    async def r05(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 0.5, button)
-    
+    async def b05(self, i, b): await self.save_rating(i, 0.5, b)
     @discord.ui.button(label="1.0", style=discord.ButtonStyle.secondary)
-    async def r10(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 1.0, button)
-    
+    async def b1(self, i, b): await self.save_rating(i, 1.0, b)
     @discord.ui.button(label="1.5", style=discord.ButtonStyle.secondary)
-    async def r15(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 1.5, button)
-    
+    async def b15(self, i, b): await self.save_rating(i, 1.5, b)
     @discord.ui.button(label="2.0", style=discord.ButtonStyle.secondary)
-    async def r20(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 2.0, button)
-    
+    async def b2(self, i, b): await self.save_rating(i, 2.0, b)
     @discord.ui.button(label="2.5", style=discord.ButtonStyle.secondary)
-    async def r25(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 2.5, button)
-    
+    async def b25(self, i, b): await self.save_rating(i, 2.5, b)
     @discord.ui.button(label="3.0", style=discord.ButtonStyle.secondary)
-    async def r30(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 3.0, button)
-    
+    async def b3(self, i, b): await self.save_rating(i, 3.0, b)
     @discord.ui.button(label="3.5", style=discord.ButtonStyle.secondary)
-    async def r35(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 3.5, button)
-    
+    async def b35(self, i, b): await self.save_rating(i, 3.5, b)
     @discord.ui.button(label="4.0", style=discord.ButtonStyle.secondary)
-    async def r40(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 4.0, button)
-    
+    async def b4(self, i, b): await self.save_rating(i, 4.0, b)
     @discord.ui.button(label="4.5", style=discord.ButtonStyle.secondary)
-    async def r45(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 4.5, button)
-    
+    async def b45(self, i, b): await self.save_rating(i, 4.5, b)
     @discord.ui.button(label="5.0", style=discord.ButtonStyle.secondary)
-    async def r50(self, interaction: discord.Interaction, button: discord.ui.Button): await self.save_rating(interaction, 5.0, button)
-
+    async def b5(self, i, b): await self.save_rating(i, 5.0, b)
 
 @bot.tree.command(name="rate", description="Search and rate movies")
 @app_commands.describe(movie_name="Name of the movie")
