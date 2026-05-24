@@ -482,9 +482,15 @@ class RatingView(discord.ui.View):
             cursor.close()
             conn.close()
             
-            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) Average: {avg}/5 ({count} Ratings)"
+            msg = f"✅ Rating Save {rating} Stars ({xp_gain} XP) | Avg: {avg}/5 ({count} Ratings)"
             if level_up:
                 msg += f"\n🎉 Congrats! You reached Level **{level}**!"
+
+
+
+            embed = interaction.message.embeds[0]
+
+            embed.add_field(name="Status", value=msg, inline=False)
             
             # FARB-LOGIK
             for child in self.children:
