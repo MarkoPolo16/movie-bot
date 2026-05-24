@@ -380,7 +380,10 @@ async def setup_roles_cmd(ctx):
 # MOVIE SEARCH & RATINGS (SLASH-COMMANDS)
 # ==========================================
 async def movie_autocomplete(interaction: discord.Interaction, current: str):
-    if not current or not TMDB_API_KEY: return []
+    if not current or not TMDB_API_KEY:
+        await interaction.response.autocomplete([])
+        return
+
     try:
         data = requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={current}").json()
         choices = []
@@ -389,8 +392,11 @@ async def movie_autocomplete(interaction: discord.Interaction, current: str):
                 year = m.get("release_date", "0000")[:4]
                 label = f"{m['title']} ({year})"
                 choices.append(app_commands.Choice(name=label, value=label))
-        return choices
-    except: return []
+        
+        await interaction.response.autocomplete(choices)
+    except Exception as e:
+        print(f"Autocomplete Error: {e}")
+        await interaction.response.autocomplete([])
 
 async def director_autocomplete(interaction: discord.Interaction, current: str):
     if not current or not TMDB_API_KEY: return []
@@ -421,6 +427,9 @@ class RatingView(discord.ui.View):
         self.movie_title = movie_title
 
 async def save_rating(self, interaction: discord.Interaction, rating: float):
+    # Sofort defer, um das Zeitlimit zu verhindern
+    await interaction.response.defer(ephemeral=True)
+    
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -491,7 +500,8 @@ async def save_rating(self, interaction: discord.Interaction, rating: float):
         if level_up:
             msg += f"\n🎉 Congratulations! You are now Level **{level}**!"
         
-        await interaction.response.send_message(msg, ephemeral=True)
+        # WICHTIG: Hier .followup.send verwenden, da wir oben defer() benutzt haben
+        await interaction.followup.send(msg)
             
     except Exception as e:
         print(f"Error saving rating: {e}")
