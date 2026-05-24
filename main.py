@@ -493,27 +493,28 @@ async def rate(interaction: discord.Interaction, movie_name: str):
         await interaction.followup.send(embed=embed, view=RatingView(movie["id"], movie["title"]), ephemeral=True)
     except Exception as e: await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
-@bot.tree.command(name="rank", description="Check your current level")
-async def rank(interaction: discord.Interaction):
-    if interaction.channel.id != RANK_CHANNEL_ID:
-        return await interaction.response.send_message(f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", ephemeral=True)
+@bot.tree.command(name="rank", description="Check the rank of you or another user")
+@app_commands.describe(member="Optional: User to check the rank for")
+async def rank(interaction: discord.Interaction, member: discord.Member = None):
+    # Wenn kein User angegeben, nimm den Ausführenden
+    target = member or interaction.user
     
     await interaction.response.defer()
     
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(interaction.user.id),))
+        cursor.execute("SELECT xp, level FROM levels WHERE user_id=%s", (str(target.id),))
         res = cursor.fetchone()
         
-        if not res: 
+        if not res:
             cursor.close()
             conn.close()
-            return await interaction.followup.send("No rank found, start chatting!", ephemeral=True)
+            return await interaction.followup.send(f"{'Du' if target == interaction.user else target.name} your rank could not be found.", ephemeral=True)
         
         xp, level = res
         
-        # --- LEVEL-UP NACHHOLEN ---
+        # Level-Update Logik (falls noch was offen ist)
         level_up = False
         while True:
             needed_xp = int(100 * (1.2 ** (level - 1)))
@@ -521,20 +522,44 @@ async def rank(interaction: discord.Interaction):
                 xp -= needed_xp
                 level += 1
                 level_up = True
-            else:
-                break
+            else: break
         
         if level_up:
-            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", 
-                           (level, xp, str(interaction.user.id)))
+            cursor.execute("UPDATE levels SET level = %s, xp = %s WHERE user_id = %s", (level, xp, str(target.id)))
             conn.commit()
-        
+            
         cursor.close()
         conn.close()
         
-        file = await create_rank_card(interaction.user, level, xp)
+        # Rank-Card erstellen
+        file = await create_rank_card(target, level, xp)
         await interaction.followup.send(file=file)
-    except Exception as e: await interaction.followup.send(f"Error: {e}")
+    except Exception as e:
+        await interaction.followup.send(f"Error loading rank: {e}")
+
+
+@bot.tree.command(name="topxp", description="Show the top 10 users with the most XP")
+async def topxp(interaction: discord.Interaction):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            return await interaction.response.send_message("No XP data available.")
+        
+        embed = discord.Embed(title="🏆 Top 10 XP-Leaderboard", color=CYAN)
+        for idx, (uid, xp, lvl) in enumerate(results, 1):
+            member = interaction.guild.get_member(int(uid))
+            name = member.display_name if member else f"User {uid}"
+            embed.add_field(name=f"{idx}. {name}", value=f"Level: {lvl} | XP: {xp}", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"Error: {e}")
 
 @bot.tree.command(name="dir", description="Search information about a director")
 @app_commands.describe(name="Name of the director")
