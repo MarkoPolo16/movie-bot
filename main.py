@@ -416,22 +416,21 @@ async def actor_autocomplete(interaction: discord.Interaction, current: str):
 
 class RatingView(discord.ui.View):
     def __init__(self, movie_id: int, movie_title: str):
-        # timeout=None verhindert, dass die Buttons nach 2 Minuten "ablaufen"
-        # Dies ist die Hauptursache für den 404 Fehler bei Interaktionen
+        # timeout=None verhindert, dass die Buttons nach 2 Minuten ungültig werden
         super().__init__(timeout=None)
         self.movie_id = movie_id
         self.movie_title = movie_title
 
     async def save_rating(self, interaction: discord.Interaction, rating: float):
-        # 1. Sofortiges Defer mit ephemeral=True
+        # 1. Sofortiges Defer, um das 3-Sekunden-Limit zu umgehen
         await interaction.response.defer(ephemeral=True)
         
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cursor = conn.cursor()
             
-            # 2. Prüfen, ob der User den Film schon bewertet hat
-            cursor.execute("SELECT id FROM ratings WHERE user_id = %s AND movie_id = %s", 
+            # 2. Prüfen, ob der User den Film schon bewertet hat (SELECT 1 statt SELECT id)
+            cursor.execute("SELECT 1 FROM ratings WHERE user_id = %s AND movie_id = %s", 
                            (str(interaction.user.id), self.movie_id))
             already_rated = cursor.fetchone()
             
@@ -445,18 +444,17 @@ class RatingView(discord.ui.View):
             xp_gain = 50 if not already_rated else 0
             
             level_up = False
-            # Initiale Werte, falls der User noch nicht in der 'levels' Tabelle existiert
             xp = 0
             level = 1
             
-            # Wenn der User schon existiert, aktuelle Werte laden
-            cursor.execute("SELECT xp, level FROM levels WHERE user_id = %s", (str(interaction.user.id),))
-            res = cursor.fetchone()
-            if res:
-                xp, level = res
-            
             # 4. XP-Logik (nur bei Erstbewertung)
             if xp_gain > 0:
+                # Aktuelle Werte laden
+                cursor.execute("SELECT xp, level FROM levels WHERE user_id = %s", (str(interaction.user.id),))
+                res = cursor.fetchone()
+                if res:
+                    xp, level = res
+                
                 xp += xp_gain
                 
                 # Level-Up Berechnung
@@ -502,9 +500,8 @@ class RatingView(discord.ui.View):
             
         except Exception as e:
             print(f"Error saving rating: {e}")
-            # Falls ein Fehler passiert, geben wir dem User eine Rückmeldung
             try:
-                await interaction.followup.send(f"❌ Ein Fehler ist aufgetreten: {str(e)}", ephemeral=True)
+                await interaction.followup.send(f"❌ Error saving rating. Reason: {str(e)}", ephemeral=True)
             except:
                 pass
 
