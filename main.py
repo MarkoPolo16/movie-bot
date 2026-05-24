@@ -616,7 +616,10 @@ async def topxp(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
+        
+        # Angepasster Query: Sortiert zuerst nach Level, dann nach XP
+        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY level DESC, xp DESC LIMIT 10")
+        
         results = cursor.fetchall()
         cursor.close()
         conn.close()
