@@ -540,6 +540,11 @@ async def rate(interaction: discord.Interaction, movie_name: str):
 @bot.tree.command(name="rank", description="Check the rank of you or another user")
 @app_commands.describe(member="Optional: User to check the rank for")
 async def rank(interaction: discord.Interaction, member: discord.Member = None):
+    if interaction.channel.id != RANK_CHANNEL_ID:
+        return await interaction.response.send_message(
+            f"❌ Please use this command in <#{RANK_CHANNEL_ID}>.", 
+            ephemeral=True
+        )
     # Wenn kein User angegeben wurde, nimm den Ausführenden
     target = member or interaction.user
     
