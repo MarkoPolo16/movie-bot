@@ -651,7 +651,9 @@ async def topxp(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10")
+        
+        # Sortierung: Erst nach Level (DESC), dann bei gleichem Level nach XP (DESC)
+        cursor.execute("SELECT user_id, xp, level FROM levels ORDER BY level DESC, xp DESC LIMIT 10")
         results = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -659,7 +661,7 @@ async def topxp(interaction: discord.Interaction):
         if not results:
             return await interaction.response.send_message("No XP data available.")
         
-        embed = discord.Embed(title="🏆 Top 10 XP-Leaderboard", color=CYAN)
+        embed = discord.Embed(title="🏆 Top 10 Leaderboard", color=CYAN)
         for idx, (uid, xp, lvl) in enumerate(results, 1):
             member = interaction.guild.get_member(int(uid))
             name = member.display_name if member else f"User {uid}"
