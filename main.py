@@ -958,6 +958,47 @@ async def top10films(interaction: discord.Interaction):
         print(f"Error in top10films: {e}")
         await interaction.followup.send("An error occurred while fetching the top list.")
 
+
+@bot.tree.command(name="top10tv", description="Show the server's top 10 TV shows")
+async def top10tv(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=False)
+    
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        # Abfrage: Sortierung nach Bewertung und Anzahl der Votes für TV-Serien
+        cursor.execute("""
+            SELECT tv_title, AVG(rating), COUNT(*) 
+            FROM tv_ratings 
+            GROUP BY tv_title 
+            HAVING COUNT(*) > 0 
+            ORDER BY AVG(rating) DESC, COUNT(*) DESC 
+            LIMIT 10
+        """)
+        
+        top_shows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not top_shows:
+            return await interaction.followup.send("No TV show ratings found yet.")
+        
+        # Embed erstellen
+        embed = discord.Embed(title="🏆 Top 10 TV Shows", color=CYAN)
+        
+        description = ""
+        for i, (title, avg, count) in enumerate(top_shows, 1):
+            # Durchschnitt mit 2 Nachkommastellen
+            description += f"{i}. **{title}** - {avg:.2f}/5 ⭐ ({count} ratings)\n"
+            
+        embed.description = description
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Error in top10tv: {e}")
+        await interaction.followup.send("An error occurred while fetching the top TV show list.")
+
 @bot.tree.command(name="toplist", description="Showing the top 10 reviewers (Movies + TV)")
 async def toplist(interaction: discord.Interaction):
     try:
