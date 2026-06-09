@@ -1,3 +1,4 @@
 .env
 ratings.db
+cinemabot_dashboard_integration.py
 __pycache__/
