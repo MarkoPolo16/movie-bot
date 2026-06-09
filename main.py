@@ -6,6 +6,8 @@ from flask import Flask
 from threading import Thread
 from PIL import Image, ImageDraw, ImageFont, ImageOps # Neu für RankCard
 import io
+from cinemabot_dashboard_integration import setup_dashboard_sync
+
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -113,6 +115,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+setup_dashboard_sync(bot)
 
 def init_db():
     if not DATABASE_URL: return
