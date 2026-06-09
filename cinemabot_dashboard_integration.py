@@ -7,7 +7,7 @@ import asyncio, os, requests
 from datetime import datetime
 from main import bot
 
-DASHBOARD_URL = "https://project--e1aacbef-f2f0-42f5-b973-b6a6b56f5516.lovable.app"
+DASHBOARD_URL = "http://localhost:3000"
 BOT_SHARED_SECRET = os.getenv("BOT_SHARED_SECRET")  # set this in your bot env!
 HEADERS = {"x-bot-secret": BOT_SHARED_SECRET or "", "Content-Type": "application/json"}
 
